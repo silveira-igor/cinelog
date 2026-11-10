@@ -8,6 +8,7 @@ import {
 } from './config';
 
 const LOCAL_VISITS_KEY = 'cinelog_visits_v1';
+const MOVIE_META_CACHE_KEY = 'cinelog_movie_meta_cache_v1';
 const REWATCH_TAG_TOKEN = '[REWATCH]';
 const PROFILE_ROW_MARKER = '__CINELOG_PROFILE__';
 
@@ -46,6 +47,34 @@ function saveLocalVisitsRaw(visits) {
 }
 
 /**
+ * Cache local de metadados do TMDB (runtime, genres, director) para enriquecer
+ * automaticamente filmes já cadastrados anteriormente no banco!
+ */
+export function getMovieMetaCache() {
+  try {
+    const raw = localStorage.getItem(MOVIE_META_CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveMovieMetaToCache(movieKey, meta) {
+  if (!movieKey || !meta) return;
+  try {
+    const current = getMovieMetaCache();
+    current[movieKey] = {
+      runtime: Number(meta.runtime || 0),
+      genres: Array.isArray(meta.genres) ? meta.genres : [],
+      director: String(meta.director || ''),
+    };
+    localStorage.setItem(MOVIE_META_CACHE_KEY, JSON.stringify(current));
+  } catch {
+    // ignora
+  }
+}
+
+/**
  * Filmes de exemplo exibidos quando um visitante abre o site pela primeira vez
  * sem estar conectado a nenhuma conta (@usuario).
  */
@@ -70,7 +99,8 @@ export function getDemoVisits() {
       cinema_location: 'Cinemark Shopping Eldorado',
       company: 'Ana, Lucas',
       rating: 5.0,
-      notes: '[REWATCH]',
+      notes:
+        '[REWATCH] [META:{"runtime":169,"genres":["Ficção científica","Drama","Aventura"],"director":"Christopher Nolan","seat":"Sala IMAX - Fileira G12"}] Som absurdo no IMAX, arrepio na cena da acoplagem!',
       created_at: `${y}-${m}-08T21:00:00Z`,
       isDemo: true,
     },
@@ -89,7 +119,8 @@ export function getDemoVisits() {
       cinema_location: 'Cinemark Cidade Jardim',
       company: 'Sozinho',
       rating: 4.5,
-      notes: '',
+      notes:
+        '[META:{"runtime":166,"genres":["Ficção científica","Aventura"],"director":"Denis Villeneuve","seat":"Sala XD 1 - Poltrona H08"}] Sessão de pré-estreia lotada.',
       created_at: `${y}-${m}-03T20:00:00Z`,
       isDemo: true,
     },
@@ -108,7 +139,8 @@ export function getDemoVisits() {
       cinema_location: 'Espaço Itaú de Cinema',
       company: 'Mariana',
       rating: 5.0,
-      notes: '',
+      notes:
+        '[META:{"runtime":135,"genres":["Drama","História"],"director":"Walter Salles","seat":"Sala 2 - F06"}] Atuação histórica da Fernanda Torres.',
       created_at: `${y}-${m}-01T19:00:00Z`,
       isDemo: true,
     },
@@ -127,7 +159,8 @@ export function getDemoVisits() {
       cinema_location: 'Cinépolis JK Iguatemi',
       company: 'Sozinho',
       rating: 4.5,
-      notes: '[REWATCH]',
+      notes:
+        '[REWATCH] [META:{"runtime":180,"genres":["Drama","História"],"director":"Christopher Nolan","seat":"Sala IMAX - E10"}]',
       created_at: `${y}-01-15T21:00:00Z`,
       isDemo: true,
     },
@@ -177,11 +210,13 @@ export function serializeCompanions(companionsList) {
 }
 
 /**
- * Extrai metadados embutidos no campo notes ([USER:username] e [REWATCH])
+ * Extrai metadados embutidos no campo notes ([USER:username], [REWATCH] e [META:{...}])
+ * mantendo o comentário livre (cleanNotes) limpo!
  */
 export function parseNotesMetadata(rawNotes, explicitManualFlag, explicitOwner) {
   let str = String(rawNotes || '');
 
+  // 1. Extrai dono [USER:xxx]
   let ownerUsername = normalizeUsername(explicitOwner || '');
   const userMatch = str.match(/\[USER:([a-z0-9_.-]+)\]/i);
   if (userMatch && userMatch[1]) {
@@ -189,19 +224,45 @@ export function parseNotesMetadata(rawNotes, explicitManualFlag, explicitOwner) 
     str = str.replace(userMatch[0], '');
   }
 
+  // 2. Extrai [META:{...}]
+  let movieMeta = { runtime: 0, genres: [], director: '', seat: '' };
+  const metaMatch = str.match(/\[META:(\{.*?\})\]/);
+  if (metaMatch && metaMatch[1]) {
+    try {
+      const parsed = JSON.parse(metaMatch[1]);
+      movieMeta = {
+        runtime: Number(parsed.runtime || 0),
+        genres: Array.isArray(parsed.genres) ? parsed.genres : [],
+        director: String(parsed.director || ''),
+        seat: String(parsed.seat || ''),
+      };
+    } catch {
+      // ignora JSON inválido
+    }
+    str = str.replace(metaMatch[0], '');
+  }
+
+  // 3. Extrai flag de Reassistido manual [REWATCH]
   const hasRewatchToken = str.includes(REWATCH_TAG_TOKEN);
   str = str.replace(REWATCH_TAG_TOKEN, '').trim();
 
   return {
     ownerUsername,
     isManualRewatch: Boolean(explicitManualFlag || hasRewatchToken),
+    movieMeta,
     cleanNotes: str,
   };
 }
 
-export function encodeNotesMetadata({ cleanNotes, isManualRewatch, ownerUsername }) {
+export function encodeNotesMetadata({
+  cleanNotes,
+  isManualRewatch,
+  ownerUsername,
+  movieMeta,
+}) {
   const base = String(cleanNotes || '')
     .replace(/\[USER:[a-z0-9_.-]+\]/gi, '')
+    .replace(/\[META:\{.*?\}\]/g, '')
     .replace(REWATCH_TAG_TOKEN, '')
     .trim();
 
@@ -213,6 +274,22 @@ export function encodeNotesMetadata({ cleanNotes, isManualRewatch, ownerUsername
   if (isManualRewatch) {
     prefixes.push(REWATCH_TAG_TOKEN);
   }
+  if (
+    movieMeta &&
+    (Number(movieMeta.runtime) > 0 ||
+      (movieMeta.genres && movieMeta.genres.length > 0) ||
+      movieMeta.director ||
+      movieMeta.seat)
+  ) {
+    const compactMeta = {
+      runtime: Number(movieMeta.runtime || 0),
+      genres: Array.isArray(movieMeta.genres) ? movieMeta.genres.slice(0, 3) : [],
+      director: String(movieMeta.director || '').trim(),
+      seat: String(movieMeta.seat || '').trim(),
+    };
+    prefixes.push(`[META:${JSON.stringify(compactMeta)}]`);
+  }
+
   return [...prefixes, base].filter(Boolean).join(' ');
 }
 
@@ -246,7 +323,7 @@ export function computeReleaseTimingFlags(visitDateStr, releaseDateStr) {
   return { isPreRelease: false, isReexibicao };
 }
 
-function normalizeTitle(title) {
+export function normalizeTitle(title) {
   return String(title || '')
     .toLowerCase()
     .normalize('NFD')
@@ -280,7 +357,10 @@ function extractProfilesAndMovieRows(allRows) {
         username,
         displayName: meta.displayName || username,
         pin: String(meta.pin || '1234'),
+        annualGoal: Number(meta.annualGoal || 24),
+        watchlist: Array.isArray(meta.watchlist) ? meta.watchlist : [],
         createdAt: row.created_at,
+        rawMeta: meta,
         isPrimary: profilesMap.size === 0,
       });
     } else {
@@ -316,6 +396,8 @@ function extractProfilesAndMovieRows(allRows) {
  * Enriquecimento automático e retroativo das idas de um perfil
  */
 export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = '') {
+  const metaCache = getMovieMetaCache();
+
   const chronological = [...rawVisits].sort((a, b) => {
     const dateDiff = String(a.visit_date || '').localeCompare(String(b.visit_date || ''));
     if (dateDiff !== 0) return dateDiff;
@@ -339,11 +421,17 @@ export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = ''
       visit.release_date
     );
 
-    const { ownerUsername, isManualRewatch, cleanNotes } = parseNotesMetadata(
-      visit.notes,
-      visit.is_manual_rewatch,
-      visit.ownerUsername
-    );
+    const { ownerUsername, isManualRewatch, movieMeta, cleanNotes } =
+      parseNotesMetadata(visit.notes, visit.is_manual_rewatch, visit.ownerUsername);
+
+    const cached = metaCache[movieKey] || {};
+    const runtime = Number(movieMeta.runtime || cached.runtime || 0);
+    const genres =
+      movieMeta.genres && movieMeta.genres.length > 0
+        ? movieMeta.genres
+        : cached.genres || [];
+    const director = movieMeta.director || cached.director || '';
+    const seat = movieMeta.seat || '';
 
     const effectiveOwner = ownerUsername || primaryProfileUsername;
     const companionsList = parseCompanions(visit.company);
@@ -351,6 +439,7 @@ export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = ''
 
     enrichedMap.set(visit.id, {
       ...visit,
+      movieKey,
       ownerUsername: effectiveOwner,
       price_paid: Number(visit.price_paid || 0),
       rating: Number(visit.rating || 0),
@@ -358,6 +447,10 @@ export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = ''
       isAlone,
       company: serializeCompanions(companionsList),
       notes: cleanNotes,
+      seat,
+      runtime,
+      genres,
+      director,
       isManualRewatch,
       isPreRelease,
       isReexibicao,
@@ -376,20 +469,18 @@ export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = ''
 }
 
 /**
- * Busca todas as idas do @usuario conectado.
- * Se não houver nenhum @usuario conectado neste dispositivo, retorna os Filmes de Exemplo (Modo Demo)
- * sem expor a conta pessoal de ninguém!
+ * Busca todas as idas e preferências (meta anual e lista "Quero Ver") do @usuario
  */
 export async function fetchCinemaVisits(requestedUsername = '') {
   const targetUser = normalizeUsername(requestedUsername);
 
-  // Se o visitante entrou pela primeira vez e não está logado em nenhuma conta,
-  // mostra apenas os filmes de exemplo (sem carregar nem exibir a conta do dono)!
   if (!targetUser) {
     return {
       visits: getDemoVisits(),
       profiles: [],
       activeUsername: '',
+      annualGoal: 24,
+      watchlist: [],
       isDemoMode: true,
       cloudActive: isSupabaseConfigured(),
       cloudError: null,
@@ -424,6 +515,8 @@ export async function fetchCinemaVisits(requestedUsername = '') {
   const { profiles, primaryProfileUsername, movieRows } =
     extractProfilesAndMovieRows(allRows);
 
+  const activeProfileObj = profiles.find((p) => p.username === targetUser);
+
   const userMovieRows = movieRows.filter((row) => {
     const { ownerUsername } = parseNotesMetadata(row.notes);
     const effectiveOwner = ownerUsername || primaryProfileUsername;
@@ -434,6 +527,8 @@ export async function fetchCinemaVisits(requestedUsername = '') {
     visits: enrichVisitsWithAutoFlags(userMovieRows, primaryProfileUsername),
     profiles,
     activeUsername: targetUser,
+    annualGoal: activeProfileObj ? activeProfileObj.annualGoal : 24,
+    watchlist: activeProfileObj ? activeProfileObj.watchlist : [],
     primaryProfileUsername,
     isDemoMode: false,
     cloudActive,
@@ -441,9 +536,6 @@ export async function fetchCinemaVisits(requestedUsername = '') {
   };
 }
 
-/**
- * Busca a lista de perfis no banco apenas para validação interna de login/cadastro
- */
 async function fetchAllProfilesInternal() {
   const supabase = getSupabaseClient();
   let allRows = [];
@@ -464,6 +556,50 @@ async function fetchAllProfilesInternal() {
   }
 
   return extractProfilesAndMovieRows(allRows);
+}
+
+/**
+ * Atualiza a Meta Anual ou a Watchlist ("Quero Ver no Cinema") do @usuario no Supabase
+ */
+export async function updateProfilePreferences(username, { annualGoal, watchlist }) {
+  const cleanUser = normalizeUsername(username);
+  if (!cleanUser) return null;
+
+  const { profiles } = await fetchAllProfilesInternal();
+  const found = profiles.find((p) => p.username === cleanUser);
+  if (!found) return null;
+
+  const updatedMeta = {
+    ...found.rawMeta,
+    displayName: found.displayName,
+    pin: found.pin,
+    annualGoal: annualGoal !== undefined ? Number(annualGoal) : found.annualGoal,
+    watchlist: watchlist !== undefined ? watchlist : found.watchlist,
+  };
+
+  const newNotes = JSON.stringify(updatedMeta);
+  const supabase = getSupabaseClient();
+
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('cinema_visits')
+      .update({ notes: newNotes })
+      .eq('id', found.id)
+      .select()
+      .single();
+
+    if (!error && data) {
+      const local = getLocalVisitsRaw().map((r) => (r.id === found.id ? data : r));
+      saveLocalVisitsRaw(local);
+    }
+  } else {
+    const local = getLocalVisitsRaw().map((r) =>
+      r.id === found.id ? { ...r, notes: newNotes } : r
+    );
+    saveLocalVisitsRaw(local);
+  }
+
+  return updatedMeta;
 }
 
 /**
@@ -502,6 +638,8 @@ export async function createUserProfile({ username, displayName, pin }) {
     notes: JSON.stringify({
       displayName: String(displayName || cleanUser).trim(),
       pin: cleanPin,
+      annualGoal: 24,
+      watchlist: [],
       createdAt: new Date().toISOString(),
     }),
   };
@@ -570,6 +708,12 @@ export async function createCinemaVisit(visitPayload, ownerUsername) {
     cleanNotes: visitPayload.notes,
     isManualRewatch: visitPayload.is_manual_rewatch,
     ownerUsername: activeUser,
+    movieMeta: {
+      runtime: visitPayload.runtime,
+      genres: visitPayload.genres,
+      director: visitPayload.director,
+      seat: visitPayload.seat,
+    },
   });
 
   const cleanPayload = {
@@ -615,7 +759,7 @@ export async function createCinemaVisit(visitPayload, ownerUsername) {
 }
 
 /**
- * Atualiza uma ida existente preservando o @usuario dono
+ * Atualiza uma ida existente preservando o @usuario dono e os metadados
  */
 export async function updateCinemaVisit(id, visitPayload, ownerUsername) {
   const activeUser = normalizeUsername(
@@ -625,6 +769,12 @@ export async function updateCinemaVisit(id, visitPayload, ownerUsername) {
     cleanNotes: visitPayload.notes,
     isManualRewatch: visitPayload.is_manual_rewatch,
     ownerUsername: activeUser,
+    movieMeta: {
+      runtime: visitPayload.runtime,
+      genres: visitPayload.genres,
+      director: visitPayload.director,
+      seat: visitPayload.seat,
+    },
   });
 
   const cleanPayload = {
@@ -680,9 +830,6 @@ export async function deleteCinemaVisit(id) {
   saveLocalVisitsRaw(local);
 }
 
-/**
- * Extrai sugestões inteligentes de Locais e Companhias individuais do perfil atual
- */
 export function getSmartSuggestions(visits) {
   const locationCounts = new Map();
   const companyCounts = new Map();

@@ -17,12 +17,22 @@ import {
   Trash2,
   Image as ImageIcon,
   History,
+  Clock,
+  Clapperboard,
+  Armchair,
+  MessageSquare,
 } from 'lucide-react';
-import { searchMovies, fetchMoviePosters } from '../services/tmdb';
+import {
+  searchMovies,
+  fetchMoviePosters,
+  fetchMovieRichDetails,
+} from '../services/tmdb';
 import {
   parseCompanions,
   serializeCompanions,
   computeReleaseTimingFlags,
+  saveMovieMetaToCache,
+  normalizeTitle,
 } from '../services/storage';
 import { StarRatingInput } from './StarRating';
 
@@ -30,20 +40,13 @@ const ORIGINS = ['Voucher', 'Club', 'Comprado'];
 const FORMATS = ['2D', '3D', 'XD', 'IMAX'];
 const AUDIOS = ['Legendado', 'Dublado', 'Original'];
 
-function normalizeTitle(title) {
-  return String(title || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]/g, '');
-}
-
 export default function VisitModal({
   isOpen,
   onClose,
   onSave,
   onDelete,
   initialData = null,
+  prefillMovie = null,
   existingVisits = [],
   suggestions = { locations: [], companies: [] },
 }) {
@@ -61,15 +64,23 @@ export default function VisitModal({
   const [pricePaid, setPricePaid] = useState('0');
   const [cinemaLocation, setCinemaLocation] = useState('');
 
-  // Opção manual: já assistiu a este filme antes na vida (mesmo fora do sistema)
+  // Metadados automáticos do TMDB (Duração, Gêneros, Diretor)
+  const [runtime, setRuntime] = useState(0);
+  const [genres, setGenres] = useState([]);
+  const [director, setDirector] = useState('');
+
+  // Campos opcionais de Sala/Assento e Comentário Rápido
+  const [seat, setSeat] = useState('');
+  const [notes, setNotes] = useState('');
+
+  // Opção manual: já assistiu a este filme antes na vida
   const [isManualRewatch, setIsManualRewatch] = useState(false);
 
-  // Lista de companhias individuais ([] = Sozinho) + input para adicionar cada pessoa
+  // Lista de companhias individuais
   const [companions, setCompanions] = useState([]);
   const [companionInput, setCompanionInput] = useState('');
 
   const [rating, setRating] = useState(0);
-  const [notes, setNotes] = useState('');
 
   // Busca automática de filmes (TMDB / Catálogo)
   const [searchQuery, setSearchQuery] = useState('');
@@ -77,7 +88,7 @@ export default function VisitModal({
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // Seletor manual de Pôsteres (Estilo Letterboxd)
+  // Seletor manual de Pôsteres
   const [showPosterPicker, setShowPosterPicker] = useState(false);
   const [availablePosters, setAvailablePosters] = useState([]);
   const [loadingPosters, setLoadingPosters] = useState(false);
@@ -110,8 +121,55 @@ export default function VisitModal({
       setCompanions(parseCompanions(initialData.companionsList || initialData.company));
       setIsManualRewatch(Boolean(initialData.isManualRewatch || initialData.isRewatch));
       setRating(Number(initialData.rating || 0));
+      setSeat(initialData.seat || '');
       setNotes(initialData.notes || '');
+      setRuntime(Number(initialData.runtime || 0));
+      setGenres(Array.isArray(initialData.genres) ? initialData.genres : []);
+      setDirector(initialData.director || '');
       setShowDropdown(false);
+
+      // Se a ida antiga ainda não tinha duração/diretor, busca automaticamente em background
+      if (!initialData.runtime && !initialData.director) {
+        fetchMovieRichDetails({
+          tmdbId: initialData.tmdb_id,
+          title: initialData.title,
+        }).then((rich) => {
+          if (rich.runtime) setRuntime(rich.runtime);
+          if (rich.genres?.length) setGenres(rich.genres);
+          if (rich.director) setDirector(rich.director);
+        });
+      }
+    } else if (prefillMovie) {
+      setTitle(prefillMovie.title || '');
+      setSearchQuery(prefillMovie.title || '');
+      setTmdbId(prefillMovie.tmdbId || null);
+      setOriginalTitle(prefillMovie.originalTitle || prefillMovie.title || '');
+      setPosterUrl(prefillMovie.posterUrl || '');
+      setReleaseDate(prefillMovie.releaseDate || '');
+      setVisitDate(todayStr);
+      setTicketOrigin('Club');
+      setSessionFormat('2D');
+      setAudioType('Legendado');
+      setPricePaid('0');
+      setCinemaLocation(suggestions.locations[0] || '');
+      setCompanions([]);
+      setIsManualRewatch(false);
+      setRating(0);
+      setSeat('');
+      setNotes('');
+      setRuntime(0);
+      setGenres([]);
+      setDirector('');
+      setShowDropdown(false);
+
+      fetchMovieRichDetails({
+        tmdbId: prefillMovie.tmdbId,
+        title: prefillMovie.title,
+      }).then((rich) => {
+        if (rich.runtime) setRuntime(rich.runtime);
+        if (rich.genres?.length) setGenres(rich.genres);
+        if (rich.director) setDirector(rich.director);
+      });
     } else {
       setTitle('');
       setSearchQuery('');
@@ -128,11 +186,15 @@ export default function VisitModal({
       setCompanions([]);
       setIsManualRewatch(false);
       setRating(0);
+      setSeat('');
       setNotes('');
+      setRuntime(0);
+      setGenres([]);
+      setDirector('');
       setSearchResults([]);
       setShowDropdown(false);
     }
-  }, [isOpen, initialData]);
+  }, [isOpen, initialData, prefillMovie]);
 
   // Debounce da busca no TMDB ao digitar
   useEffect(() => {
@@ -180,23 +242,34 @@ export default function VisitModal({
 
   if (!isOpen) return null;
 
-  const handleSelectMovie = (movie) => {
+  const handleSelectMovie = async (movie) => {
     setTitle(movie.title);
     setSearchQuery(movie.title);
     setTmdbId(movie.tmdbId || null);
     setOriginalTitle(movie.originalTitle || movie.title);
     if (movie.posterUrl) setPosterUrl(movie.posterUrl);
     if (movie.releaseDate) setReleaseDate(movie.releaseDate);
+    if (movie.runtime) setRuntime(movie.runtime);
+    if (movie.genres?.length) setGenres(movie.genres);
+    if (movie.director) setDirector(movie.director);
     setShowDropdown(false);
     setShowPosterPicker(false);
+
+    // Puxa automaticamente Duração (min), Gêneros e Diretor do TMDB
+    const rich = await fetchMovieRichDetails({
+      tmdbId: movie.tmdbId,
+      title: movie.title,
+    });
+    if (rich.runtime) setRuntime(rich.runtime);
+    if (rich.genres?.length) setGenres(rich.genres);
+    if (rich.director) setDirector(rich.director);
   };
 
-  // Preserva o Valor Pago ao trocar a origem do ingresso (sem zerar automaticamente)
+  // Preserva o Valor Pago ao trocar a origem do ingresso
   const handleOriginChange = (origin) => {
     setTicketOrigin(origin);
   };
 
-  // Abre o seletor manual de pôsteres (estilo Letterboxd) buscando opções do TMDB / catálogo
   const handleOpenPosterGallery = async () => {
     const movieTitle = (title || searchQuery).trim();
     if (!movieTitle && !tmdbId) {
@@ -216,7 +289,6 @@ export default function VisitModal({
     }
   };
 
-  // Adicionar uma companhia à lista
   const handleAddCompanion = (nameToAdd) => {
     const raw = String(nameToAdd ?? companionInput).trim();
     if (!raw) return;
@@ -285,6 +357,30 @@ export default function VisitModal({
     setIsSaving(true);
     setErrorMsg('');
     try {
+      // Se ainda não tinha runtime/director, tenta buscar rapidinho antes de salvar
+      let finalRuntime = runtime;
+      let finalGenres = genres;
+      let finalDirector = director;
+
+      if (!finalRuntime && !finalDirector) {
+        const rich = await fetchMovieRichDetails({
+          tmdbId,
+          title: finalTitle,
+        });
+        finalRuntime = rich.runtime || 0;
+        finalGenres = rich.genres || [];
+        finalDirector = rich.director || '';
+      }
+
+      const movieKey = tmdbId
+        ? `tmdb:${tmdbId}`
+        : `title:${normalizeTitle(finalTitle)}`;
+      saveMovieMetaToCache(movieKey, {
+        runtime: finalRuntime,
+        genres: finalGenres,
+        director: finalDirector,
+      });
+
       await onSave({
         tmdb_id: tmdbId,
         title: finalTitle,
@@ -300,6 +396,10 @@ export default function VisitModal({
         companions: finalCompanions,
         company: serializeCompanions(finalCompanions),
         is_manual_rewatch: Boolean(isManualRewatch),
+        runtime: finalRuntime,
+        genres: finalGenres,
+        director: finalDirector,
+        seat: seat.trim(),
         rating: Number(rating || 0),
         notes: notes.trim(),
       });
@@ -386,7 +486,7 @@ export default function VisitModal({
               {/* Campo de Busca Automática TMDB */}
               <div className="lb-field-group lb-search-wrapper">
                 <label className="lb-label">
-                  <Search size={14} /> Filme (digite para buscar pôster e estreia)
+                  <Search size={14} /> Filme (digite para buscar pôster, estreia, duração e diretor)
                 </label>
                 <div className="lb-input-with-spinner">
                   <input
@@ -442,6 +542,23 @@ export default function VisitModal({
                   </div>
                 )}
               </div>
+
+              {/* Faixa automática de Duração, Diretor e Gêneros puxados do TMDB */}
+              {(runtime > 0 || director || genres.length > 0) && (
+                <div className="lb-tmdb-auto-meta-strip">
+                  {runtime > 0 && (
+                    <span>
+                      <Clock size={12} /> {runtime} min
+                    </span>
+                  )}
+                  {director && (
+                    <span>
+                      <Clapperboard size={12} /> {director}
+                    </span>
+                  )}
+                  {genres.length > 0 && <span>🎭 {genres.join(', ')}</span>}
+                </div>
+              )}
 
               {/* Datas: Dia da Ida & Dia de Estreia */}
               <div className="lb-two-cols">
@@ -671,7 +788,7 @@ export default function VisitModal({
             </div>
           </div>
 
-          {/* Valor Pago Total (Preservado ao mudar origem) + Local */}
+          {/* Valor Pago Total + Local */}
           <div className="lb-two-cols">
             <div className="lb-field-group">
               <label className="lb-label">
@@ -716,6 +833,35 @@ export default function VisitModal({
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Sala / Assento + Comentário Rápido (Opcional) */}
+          <div className="lb-two-cols">
+            <div className="lb-field-group">
+              <label className="lb-label">
+                <Armchair size={14} /> Sala / Assento (Opcional)
+              </label>
+              <input
+                type="text"
+                className="lb-input"
+                placeholder="Ex: Sala 4 - Poltrona G12"
+                value={seat}
+                onChange={(e) => setSeat(e.target.value)}
+              />
+            </div>
+
+            <div className="lb-field-group">
+              <label className="lb-label">
+                <MessageSquare size={14} /> Comentário Rápido da Sessão (Opcional)
+              </label>
+              <input
+                type="text"
+                className="lb-input"
+                placeholder="Ex: Som absurdo no IMAX, sala lotada!"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
           </div>
 

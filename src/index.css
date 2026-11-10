@@ -1895,6 +1895,357 @@ select {
   border-radius: 999px;
 }
 
+.lb-visitor-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.14);
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+}
+
+.lb-share-profile-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.38rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 224, 84, 0.38);
+  background: rgba(0, 224, 84, 0.08);
+  color: var(--lb-green);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lb-share-profile-btn:hover {
+  background: rgba(0, 224, 84, 0.18);
+}
+
+.lb-visitor-banner {
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.38);
+  border-radius: 10px;
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
+.lb-visitor-banner strong {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #e9d5ff;
+  font-size: 0.9rem;
+  margin-bottom: 2px;
+}
+
+.lb-visitor-banner span {
+  font-size: 0.78rem;
+  color: var(--lb-text-secondary);
+}
+
+.lb-visitor-banner-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Metadados Automáticos TMDB (Duração, Diretor, Gêneros) e Comentários */
+.lb-tmdb-auto-meta-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem;
+  background: rgba(64, 188, 244, 0.09);
+  border: 1px solid rgba(64, 188, 244, 0.28);
+  padding: 0.45rem 0.75rem;
+  border-radius: 7px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #bae6fd;
+}
+
+.lb-tmdb-auto-meta-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.lb-diary-runtime-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.7rem;
+  color: var(--lb-blue);
+  background: rgba(64, 188, 244, 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.lb-diary-comment-preview {
+  font-size: 0.76rem;
+  font-style: italic;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 2px solid var(--lb-green);
+  padding: 0.28rem 0.55rem;
+  border-radius: 0 5px 5px 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 2px;
+}
+
+.lb-detail-comment-box {
+  font-size: 0.84rem;
+  font-style: italic;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid var(--lb-green);
+  padding: 0.5rem 0.7rem;
+  border-radius: 0 6px 6px 0;
+  margin-top: 4px;
+}
+
+/* Meta Anual + Gráficos de Mês e Dia da Semana + Aba Em Breve */
+.lb-goal-banner-card {
+  background: linear-gradient(180deg, #1f2730 0%, #181e24 100%);
+  border: 1px solid rgba(0, 224, 84, 0.3);
+  border-radius: 10px;
+  padding: 1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.lb-goal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.lb-goal-top h3 {
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+}
+
+.lb-goal-edit-form {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.lb-stats-kpi-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.lb-kpi-box.purple .lb-kpi-value {
+  color: #c084fc;
+}
+
+.lb-panel-header-split {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.lb-fav-day-badge {
+  font-size: 0.75rem;
+  background: rgba(0, 224, 84, 0.12);
+  border: 1px solid rgba(0, 224, 84, 0.35);
+  color: var(--lb-text);
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+}
+
+.lb-fav-day-badge strong {
+  color: var(--lb-green);
+}
+
+/* Gráfico de Barras Mensal (Jan - Dez) */
+.lb-monthly-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 0.45rem;
+  height: 155px;
+  align-items: end;
+  padding-top: 0.5rem;
+}
+
+.lb-month-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  gap: 4px;
+}
+
+.lb-month-bar-val {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--lb-green);
+  min-height: 14px;
+}
+
+.lb-month-bar-track {
+  flex: 1;
+  width: 100%;
+  max-width: 32px;
+  background: var(--lb-bg);
+  border-radius: 5px;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+  padding: 2px;
+}
+
+.lb-month-bar-fill {
+  width: 100%;
+  background: var(--lb-surface-hover);
+  border-radius: 3px;
+  transition: height 0.25s ease;
+}
+
+.lb-month-bar-fill.has-val {
+  background: linear-gradient(180deg, var(--lb-green) 0%, #009938 100%);
+}
+
+.lb-month-bar-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--lb-text-secondary);
+}
+
+.lb-month-bar-spent {
+  font-size: 0.62rem;
+  color: var(--lb-text-muted);
+}
+
+/* Gráfico de Dia da Semana (Dom - Sáb) */
+.lb-weekday-chart {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.5rem;
+  height: 135px;
+  align-items: end;
+  padding-top: 0.35rem;
+}
+
+.lb-weekday-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  gap: 4px;
+}
+
+.lb-weekday-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--lb-text-secondary);
+}
+
+.lb-weekday-track {
+  flex: 1;
+  width: 100%;
+  max-width: 34px;
+  background: var(--lb-bg);
+  border-radius: 5px;
+  display: flex;
+  align-items: flex-end;
+  padding: 2px;
+}
+
+.lb-weekday-fill {
+  width: 100%;
+  background: var(--lb-blue);
+  border-radius: 3px;
+  opacity: 0.65;
+}
+
+.lb-weekday-fill.top {
+  background: var(--lb-green);
+  opacity: 1;
+}
+
+.lb-weekday-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--lb-text-secondary);
+}
+
+.lb-weekday-name.top {
+  color: var(--lb-green);
+  font-weight: 800;
+}
+
+/* Aba Em Breve / Quero Ver no Cinema */
+.lb-upcoming-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.lb-upcoming-header-card {
+  background: var(--lb-bg-elevated);
+  border: 1px solid var(--lb-border);
+  border-radius: 10px;
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.lb-upcoming-subtabs {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.lb-upcoming-search-wrap {
+  position: relative;
+}
+
+.lb-watchlist-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-top: 3px;
+}
+
+.lb-btn-xs {
+  border: none;
+  border-radius: 5px;
+  padding: 0.32rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+}
+
+.lb-btn-outline-green {
+  background: rgba(0, 224, 84, 0.12);
+  border: 1px solid rgba(0, 224, 84, 0.4);
+  color: var(--lb-green);
+}
+
 .lb-onboarding-card {
   background: linear-gradient(135deg, #1e2630 0%, #171d24 100%);
   border: 1px solid rgba(0, 224, 84, 0.32);
@@ -2424,6 +2775,7 @@ select {
   .lb-three-cols,
   .lb-two-cols,
   .lb-stats-kpi-grid,
+  .lb-stats-kpi-4,
   .lb-stats-cards-grid,
   .lb-rating-and-rewatch-row,
   .lb-onboarding-tips-grid {

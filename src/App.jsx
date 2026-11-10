@@ -15,6 +15,10 @@ import {
   UserCircle2,
   Compass,
   CheckCircle2,
+  Share2,
+  Check,
+  Eye,
+  Target,
 } from 'lucide-react';
 import {
   fetchCinemaVisits,
@@ -22,11 +26,13 @@ import {
   updateCinemaVisit,
   deleteCinemaVisit,
   getSmartSuggestions,
+  updateProfilePreferences,
 } from './services/storage';
 import {
   getActiveProfileUsername,
   setActiveProfileUsername,
   isProfileUnlockedOnDevice,
+  normalizeUsername,
 } from './services/config';
 import { StarDisplay } from './components/StarRating';
 import VisitModal from './components/VisitModal';
@@ -48,22 +54,39 @@ const MONTH_NAMES_SHORT = [
   'Dez',
 ];
 
+function getUrlSharedUsername() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    return normalizeUsername(params.get('u') || params.get('user') || '');
+  } catch {
+    return '';
+  }
+}
+
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'data'
   const [visits, setVisits] = useState([]);
-  const [activeUsername, setActiveUsername] = useState(() =>
-    getActiveProfileUsername()
+  const [sharedUrlUser, setSharedUrlUser] = useState(() => getUrlSharedUsername());
+  const [activeUsername, setActiveUsername] = useState(
+    () => getUrlSharedUsername() || getActiveProfileUsername()
   );
-  const [isDemoMode, setIsDemoMode] = useState(() => !getActiveProfileUsername());
+  const [annualGoal, setAnnualGoal] = useState(24);
+  const [watchlist, setWatchlist] = useState([]);
+  const [isDemoMode, setIsDemoMode] = useState(
+    () => !(getUrlSharedUsername() || getActiveProfileUsername())
+  );
   const [loading, setLoading] = useState(true);
+  const [copiedShareLink, setCopiedShareLink] = useState(false);
 
-  const [deviceUnlocked, setDeviceUnlocked] = useState(() =>
-    isProfileUnlockedOnDevice(getActiveProfileUsername())
-  );
+  const [deviceUnlocked, setDeviceUnlocked] = useState(() => {
+    const u = getUrlSharedUsername() || getActiveProfileUsername();
+    return isProfileUnlockedOnDevice(u);
+  });
 
   // Modais
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [editingVisit, setEditingVisit] = useState(null);
+  const [prefillMovie, setPrefillMovie] = useState(null);
   const [visitToDelete, setVisitToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -72,15 +95,24 @@ export default function App() {
   const loadVisits = useCallback(async (overrideUser) => {
     setLoading(true);
     try {
+      const urlUser = getUrlSharedUsername();
       const target =
-        overrideUser !== undefined ? overrideUser : getActiveProfileUsername();
+        overrideUser !== undefined
+          ? overrideUser
+          : urlUser || getActiveProfileUsername();
+
       const res = await fetchCinemaVisits(target);
       setVisits(res.visits);
       setIsDemoMode(Boolean(res.isDemoMode));
+      setAnnualGoal(Number(res.annualGoal || 24));
+      setWatchlist(Array.isArray(res.watchlist) ? res.watchlist : []);
 
       if (res.activeUsername) {
         setActiveUsername(res.activeUsername);
-        setActiveProfileUsername(res.activeUsername);
+        // Só salva no localStorage se não for apenas uma visita via link ?u=
+        if (!urlUser || isProfileUnlockedOnDevice(res.activeUsername)) {
+          setActiveProfileUsername(res.activeUsername);
+        }
         setDeviceUnlocked(isProfileUnlockedOnDevice(res.activeUsername));
       } else {
         setActiveUsername('');
@@ -95,9 +127,13 @@ export default function App() {
     loadVisits();
   }, [loadVisits]);
 
+  const isReadOnlyVisitor = Boolean(
+    activeUsername && !isDemoMode && !deviceUnlocked
+  );
+
   const suggestions = useMemo(() => getSmartSuggestions(visits), [visits]);
 
-  // Mini Dashboard da Home
+  // Mini Dashboard da Home + Meta Anual
   const homeDashboard = useMemo(() => {
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -163,6 +199,9 @@ export default function App() {
       }
     }
 
+    const goalTarget = Math.max(1, Number(annualGoal || 24));
+    const goalPct = Math.min(100, Math.round((yearCount / goalTarget) * 100));
+
     return {
       currentMonthLabel: MONTH_NAMES_SHORT[currentMonth - 1],
       currentYear,
@@ -173,14 +212,15 @@ export default function App() {
       monthComparisonStatus,
       daysSinceLastVisit,
       lastVisitDateBR,
+      goalTarget,
+      goalPct,
     };
-  }, [visits]);
+  }, [visits, annualGoal]);
 
   const latestFourVisits = useMemo(() => visits.slice(0, 4), [visits]);
 
-  // Exige um @usuario autenticado com PIN neste aparelho para adicionar/editar/excluir
   const requireUnlockedProfile = (actionFn) => {
-    const currentUser = getActiveProfileUsername() || activeUsername;
+    const currentUser = activeUsername || getActiveProfileUsername();
     if (currentUser && isProfileUnlockedOnDevice(currentUser)) {
       setDeviceUnlocked(true);
       actionFn();
@@ -193,6 +233,15 @@ export default function App() {
   const handleOpenAddModal = () => {
     requireUnlockedProfile(() => {
       setEditingVisit(null);
+      setPrefillMovie(null);
+      setIsVisitModalOpen(true);
+    });
+  };
+
+  const handleLogFromWatchlist = (movie) => {
+    requireUnlockedProfile(() => {
+      setEditingVisit(null);
+      setPrefillMovie(movie);
       setIsVisitModalOpen(true);
     });
   };
@@ -201,22 +250,22 @@ export default function App() {
     if (visit.isDemo) {
       setPendingProtectedAction(() => () => {
         setEditingVisit(null);
+        setPrefillMovie(null);
         setIsVisitModalOpen(true);
       });
       setIsProfileModalOpen(true);
       return;
     }
+    if (isReadOnlyVisitor) return;
     requireUnlockedProfile(() => {
       setEditingVisit(visit);
+      setPrefillMovie(null);
       setIsVisitModalOpen(true);
     });
   };
 
   const handleDeleteVisit = (visit, options = {}) => {
-    if (visit.isDemo) {
-      setIsProfileModalOpen(true);
-      return;
-    }
+    if (visit.isDemo || isReadOnlyVisitor) return;
     requireUnlockedProfile(async () => {
       if (options.skipPrompt) {
         await deleteCinemaVisit(visit.id);
@@ -240,7 +289,7 @@ export default function App() {
   };
 
   const handleSaveVisit = async (payload) => {
-    const owner = getActiveProfileUsername() || activeUsername;
+    const owner = activeUsername || getActiveProfileUsername();
     if (editingVisit) {
       await updateCinemaVisit(editingVisit.id, payload, owner);
     } else {
@@ -249,9 +298,62 @@ export default function App() {
     await loadVisits(owner);
   };
 
+  // Compartilhar Link Direto da Estante (?u=seu_usuario) - Item 5
+  const handleShareProfileLink = () => {
+    if (!activeUsername) return;
+    const shareUrl = `${window.location.origin}${window.location.pathname}?u=${encodeURIComponent(
+      activeUsername
+    )}`;
+    navigator.clipboard.writeText(shareUrl);
+    setCopiedShareLink(true);
+    setTimeout(() => setCopiedShareLink(false), 2600);
+  };
+
+  // Atualizar Meta Anual (Item 8)
+  const handleUpdateAnnualGoal = async (newGoal) => {
+    setAnnualGoal(newGoal);
+    if (activeUsername && deviceUnlocked) {
+      await updateProfilePreferences(activeUsername, { annualGoal: newGoal });
+    }
+  };
+
+  // Adicionar/Remover Filme da Watchlist "Quero Ver no Cinema" (Item 6)
+  const handleToggleWatchlistItem = async (movie) => {
+    requireUnlockedProfile(async () => {
+      const exists = watchlist.some(
+        (w) =>
+          (w.tmdbId && movie.tmdbId && w.tmdbId === movie.tmdbId) ||
+          w.title === movie.title
+      );
+      let nextList;
+      if (exists) {
+        nextList = watchlist.filter(
+          (w) =>
+            !(
+              (w.tmdbId && movie.tmdbId && w.tmdbId === movie.tmdbId) ||
+              w.title === movie.title
+            )
+        );
+      } else {
+        nextList = [
+          {
+            tmdbId: movie.tmdbId || null,
+            title: movie.title,
+            originalTitle: movie.originalTitle || movie.title,
+            posterUrl: movie.posterUrl || '',
+            releaseDate: movie.releaseDate || '',
+          },
+          ...watchlist,
+        ];
+      }
+      setWatchlist(nextList);
+      await updateProfilePreferences(activeUsername, { watchlist: nextList });
+    });
+  };
+
   return (
     <div className="lb-app-shell">
-      {/* Top Navbar Limpa Estilo Letterboxd (Sem botões técnicos de chaves) */}
+      {/* Top Navbar Limpa Estilo Letterboxd */}
       <header className="lb-navbar">
         <div className="lb-navbar-inner">
           <button
@@ -272,6 +374,27 @@ export default function App() {
               <span className="lb-demo-pill hide-xs">Modo Demonstração</span>
             )}
 
+            {isReadOnlyVisitor && (
+              <span className="lb-visitor-pill">
+                <Eye size={13} /> Visitando @{activeUsername}
+              </span>
+            )}
+
+            {/* Botão de Compartilhar Link Direto da Estante (?u=seu_usuario) */}
+            {activeUsername && !isDemoMode && (
+              <button
+                type="button"
+                className="lb-share-profile-btn"
+                onClick={handleShareProfileLink}
+                title="Copiar link público de leitura da sua estante"
+              >
+                {copiedShareLink ? <Check size={14} /> : <Share2 size={14} />}
+                <span className="hide-xs">
+                  {copiedShareLink ? 'Link Copiado!' : 'Compartilhar Estante'}
+                </span>
+              </button>
+            )}
+
             <button
               type="button"
               className={`lb-lock-badge ${deviceUnlocked ? 'unlocked' : 'locked'}`}
@@ -281,7 +404,7 @@ export default function App() {
               }}
               title={
                 activeUsername
-                  ? `Conectado como @${activeUsername} — clique para trocar ou sair`
+                  ? `Conta @${activeUsername} — clique para trocar ou sair`
                   : 'Clique para entrar no seu @usuario ou criar sua conta'
               }
             >
@@ -296,6 +419,43 @@ export default function App() {
 
       {/* Conteúdo Principal */}
       <main className="lb-main-content">
+        {/* Banner quando estiver visitando a estante pública de alguém via ?u= */}
+        {isReadOnlyVisitor && (
+          <div className="lb-visitor-banner">
+            <div>
+              <strong>
+                <Eye size={15} /> Você está visualizando a estante de @{activeUsername}
+              </strong>
+              <span>
+                Modo somente leitura. Se você é @{activeUsername}, clique ao lado para
+                liberar com seu PIN ou entrar na sua própria conta.
+              </span>
+            </div>
+            <div className="lb-visitor-banner-actions">
+              <button
+                type="button"
+                className="lb-btn-primary lb-btn-sm"
+                onClick={() => setIsProfileModalOpen(true)}
+              >
+                Entrar / Trocar Conta
+              </button>
+              {sharedUrlUser && (
+                <button
+                  type="button"
+                  className="lb-btn-secondary lb-btn-sm"
+                  onClick={() => {
+                    window.history.replaceState({}, '', window.location.pathname);
+                    setSharedUrlUser('');
+                    loadVisits(getActiveProfileUsername());
+                  }}
+                >
+                  Sair da Visita
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Banner de Boas-Vindas e Dicas (Exibido apenas para quem entra sem conta conectada) */}
         {isDemoMode && (
           <section className="lb-onboarding-card">
@@ -338,19 +498,19 @@ export default function App() {
                   <CheckCircle2 size={14} /> 2. Registre suas Idas (+ Adicionar Ida)
                 </strong>
                 <span>
-                  Busque o filme pelo nome para puxar o pôster e a estreia do TMDB,
-                  escolha seu pôster favorito, formato (IMAX/XD), companhia e nota com ½
+                  Busque o filme pelo nome para puxar pôster, estreia, duração e diretor
+                  do TMDB, escolha seu pôster favorito, formato (IMAX/XD) e nota com ½
                   estrela.
                 </span>
               </div>
 
               <div className="lb-tip-item">
                 <strong>
-                  <CheckCircle2 size={14} /> 3. Explore Diário e Estatísticas
+                  <CheckCircle2 size={14} /> 3. Explore Diário, Estreias e Estatísticas
                 </strong>
                 <span>
-                  Clique em <em>Visualizar Dados</em> para ver sua linha do tempo mensal,
-                  estante de pôsteres e médias de gasto por ida e modalidade!
+                  Clique em <em>Visualizar Dados</em> para ver seu Diário, Horas de Tela,
+                  Dia Favorito, Gráfico Mensal e a aba <em>Em Breve / Quero Ver</em>!
                 </span>
               </div>
             </div>
@@ -385,7 +545,7 @@ export default function App() {
 
               <div className="lb-stat-divider" />
 
-              {/* 2. Total no Ano Atual */}
+              {/* 2. Total no Ano Atual + Meta Anual */}
               <div className="lb-stat-metric">
                 <span className="lb-metric-value green">
                   {homeDashboard.yearCount}
@@ -394,7 +554,9 @@ export default function App() {
                   NO ANO ({homeDashboard.currentYear})
                 </span>
                 <span className="lb-metric-subcaption">
-                  {isDemoMode ? 'Exemplo no ano' : `Idas em ${homeDashboard.currentYear}`}
+                  <Target size={10} style={{ verticalAlign: 'middle' }} /> Meta:{' '}
+                  {homeDashboard.yearCount}/{homeDashboard.goalTarget} (
+                  {homeDashboard.goalPct}%)
                 </span>
               </div>
 
@@ -569,7 +731,7 @@ export default function App() {
                           </h3>
                           <div className="lb-poster-meta-row">
                             <StarDisplay rating={visit.rating} size="sm" />
-                            {!visit.isDemo && (
+                            {!visit.isDemo && !isReadOnlyVisitor && (
                               <button
                                 type="button"
                                 className="lb-poster-delete-btn"
@@ -596,8 +758,15 @@ export default function App() {
             visits={visits}
             onBackHome={() => setCurrentScreen('home')}
             onAddClick={handleOpenAddModal}
+            onLogFromWatchlist={handleLogFromWatchlist}
             onEditVisit={handleOpenEditModal}
             onDeleteVisit={handleDeleteVisit}
+            annualGoal={annualGoal}
+            onUpdateAnnualGoal={handleUpdateAnnualGoal}
+            watchlist={watchlist}
+            onToggleWatchlistItem={handleToggleWatchlistItem}
+            onRefreshVisits={() => loadVisits(activeUsername)}
+            isReadOnlyVisitor={isReadOnlyVisitor}
           />
         )}
       </main>
@@ -608,10 +777,12 @@ export default function App() {
         onClose={() => {
           setIsVisitModalOpen(false);
           setEditingVisit(null);
+          setPrefillMovie(null);
         }}
         onSave={handleSaveVisit}
         onDelete={handleDeleteVisit}
         initialData={editingVisit}
+        prefillMovie={prefillMovie}
         existingVisits={visits}
         suggestions={suggestions}
       />
@@ -680,6 +851,10 @@ export default function App() {
         }}
         activeUsername={activeUsername}
         onProfileChanged={async (newUsername, isUnlockedNow) => {
+          if (sharedUrlUser && newUsername !== sharedUrlUser) {
+            window.history.replaceState({}, '', window.location.pathname);
+            setSharedUrlUser('');
+          }
           setActiveUsername(newUsername);
           setDeviceUnlocked(isUnlockedNow);
           await loadVisits(newUsername);

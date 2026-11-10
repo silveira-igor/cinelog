@@ -1,5 +1,18 @@
 import { getAppConfig } from './config';
 
+function getTmdbAuth() {
+  const { tmdbApiKey } = getAppConfig();
+  if (!tmdbApiKey || tmdbApiKey.includes('sua-chave')) return null;
+  const isBearerToken = tmdbApiKey.length > 60;
+  return {
+    isBearerToken,
+    headers: isBearerToken
+      ? { Authorization: `Bearer ${tmdbApiKey}`, accept: 'application/json' }
+      : { accept: 'application/json' },
+    authParam: isBearerToken ? '' : `api_key=${encodeURIComponent(tmdbApiKey)}&`,
+  };
+}
+
 /**
  * Busca filmes pelo título usando a API oficial do TMDB (em pt-BR) quando a chave
  * está configurada, ou usa fallback automático (iTunes Movie API BR).
@@ -8,22 +21,15 @@ export async function searchMovies(query) {
   const cleanQuery = (query || '').trim();
   if (cleanQuery.length < 2) return [];
 
-  const { tmdbApiKey } = getAppConfig();
+  const auth = getTmdbAuth();
 
-  // 1. Se tiver chave do TMDB configurada, busca direto no TMDB em Português
-  if (tmdbApiKey && !tmdbApiKey.includes('sua-chave')) {
+  if (auth) {
     try {
-      const isBearerToken = tmdbApiKey.length > 60;
-      const url = isBearerToken
-        ? `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(cleanQuery)}&language=pt-BR&include_adult=false&region=BR`
-        : `https://api.themoviedb.org/3/search/movie?api_key=${encodeURIComponent(tmdbApiKey)}&query=${encodeURIComponent(cleanQuery)}&language=pt-BR&include_adult=false&region=BR`;
+      const url = `https://api.themoviedb.org/3/search/movie?${auth.authParam}query=${encodeURIComponent(
+        cleanQuery
+      )}&language=pt-BR&include_adult=false&region=BR`;
 
-      const res = await fetch(url, {
-        headers: isBearerToken
-          ? { Authorization: `Bearer ${tmdbApiKey}`, accept: 'application/json' }
-          : { accept: 'application/json' },
-      });
-
+      const res = await fetch(url, { headers: auth.headers });
       if (res.ok) {
         const data = await res.json();
         return (data.results || []).slice(0, 8).map((item) => ({
@@ -43,9 +49,10 @@ export async function searchMovies(query) {
     }
   }
 
-  // 2. Fallback imediato sem precisar de chave (Catálogo de Filmes BR em alta resolução)
   try {
-    const fallbackUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(cleanQuery)}&country=BR&media=movie&entity=movie&limit=8`;
+    const fallbackUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(
+      cleanQuery
+    )}&country=BR&media=movie&entity=movie&limit=8`;
     const res = await fetch(fallbackUrl);
     if (!res.ok) return [];
     const data = await res.json();
@@ -62,6 +69,9 @@ export async function searchMovies(query) {
         releaseDate,
         year: releaseDate ? releaseDate.slice(0, 4) : '',
         posterUrl: highResPoster,
+        runtime: item.trackTimeMillis ? Math.round(item.trackTimeMillis / 60000) : 0,
+        genres: item.primaryGenreName ? [item.primaryGenreName] : [],
+        director: item.artistName || '',
         source: 'Catálogo BR',
       };
     });
@@ -72,11 +82,98 @@ export async function searchMovies(query) {
 }
 
 /**
- * Busca dezenas de pôsteres alternativos do filme no TMDB (igual ao seletor de pôsteres do Letterboxd)
- * mais alternativas do catálogo caso não haja tmdbId inicial.
+ * Busca automaticamente Duração (minutos), Gêneros e Diretor do filme no TMDB
+ */
+export async function fetchMovieRichDetails({ tmdbId, title }) {
+  const auth = getTmdbAuth();
+
+  if (auth) {
+    let targetId = tmdbId && Number(tmdbId) < 50000000 ? tmdbId : null;
+
+    if (!targetId && title && title.trim().length >= 2) {
+      try {
+        const cleanTitle = title.replace(/\(Exemplo\)/gi, '').trim();
+        const sUrl = `https://api.themoviedb.org/3/search/movie?${auth.authParam}query=${encodeURIComponent(
+          cleanTitle
+        )}&language=pt-BR`;
+        const sRes = await fetch(sUrl, { headers: auth.headers });
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          if (sData.results && sData.results.length > 0) {
+            targetId = sData.results[0].id;
+          }
+        }
+      } catch {
+        // continua
+      }
+    }
+
+    if (targetId) {
+      try {
+        const dUrl = `https://api.themoviedb.org/3/movie/${targetId}?${auth.authParam}append_to_response=credits&language=pt-BR`;
+        const dRes = await fetch(dUrl, { headers: auth.headers });
+        if (dRes.ok) {
+          const data = await dRes.json();
+          const runtime = Number(data.runtime || 0);
+          const genres = (data.genres || []).slice(0, 3).map((g) => g.name);
+          const crew = data.credits?.crew || [];
+          const directors = crew
+            .filter((c) => c.job === 'Director')
+            .map((c) => c.name);
+
+          return {
+            tmdbId: data.id,
+            runtime,
+            genres,
+            director: directors.slice(0, 2).join(', '),
+            releaseDate: data.release_date || '',
+            posterUrl: data.poster_path
+              ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
+              : '',
+          };
+        }
+      } catch (err) {
+        console.warn('Erro ao buscar detalhes ricos no TMDB:', err);
+      }
+    }
+  }
+
+  // Fallback via iTunes se não tiver chave TMDB
+  if (title && title.trim().length >= 2) {
+    try {
+      const cleanTitle = title.replace(/\(Exemplo\)/gi, '').trim();
+      const res = await fetch(
+        `https://itunes.apple.com/search?term=${encodeURIComponent(
+          cleanTitle
+        )}&country=BR&media=movie&entity=movie&limit=1`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const item = data.results?.[0];
+        if (item) {
+          return {
+            tmdbId: tmdbId || item.trackId || null,
+            runtime: item.trackTimeMillis
+              ? Math.round(item.trackTimeMillis / 60000)
+              : 0,
+            genres: item.primaryGenreName ? [item.primaryGenreName] : [],
+            director: item.artistName || '',
+          };
+        }
+      }
+    } catch {
+      // ignora
+    }
+  }
+
+  return { tmdbId: tmdbId || null, runtime: 0, genres: [], director: '' };
+}
+
+/**
+ * Busca dezenas de pôsteres alternativos do filme no TMDB
  */
 export async function fetchMoviePosters({ tmdbId, title }) {
-  const { tmdbApiKey } = getAppConfig();
+  const auth = getTmdbAuth();
   const posters = [];
   const seenUrls = new Set();
 
@@ -86,49 +183,38 @@ export async function fetchMoviePosters({ tmdbId, title }) {
     posters.push({ url, label });
   };
 
-  if (tmdbApiKey && !tmdbApiKey.includes('sua-chave')) {
-    const isBearerToken = tmdbApiKey.length > 60;
-    const headers = isBearerToken
-      ? { Authorization: `Bearer ${tmdbApiKey}`, accept: 'application/json' }
-      : { accept: 'application/json' };
-    const authParam = isBearerToken ? '' : `api_key=${encodeURIComponent(tmdbApiKey)}&`;
+  if (auth) {
+    let resolvedTmdbId = tmdbId && Number(tmdbId) < 50000000 ? tmdbId : null;
 
-    let resolvedTmdbId = tmdbId;
-
-    // Se o filme ainda não tinha tmdbId (ou tinha ID do iTunes), descobre o ID do TMDB pelo título
-    if (!resolvedTmdbId || Number(resolvedTmdbId) > 50000000) {
-      if (title && title.trim().length >= 2) {
-        try {
-          const searchUrl = `https://api.themoviedb.org/3/search/movie?${authParam}query=${encodeURIComponent(
-            title.trim()
-          )}&language=pt-BR`;
-          const sRes = await fetch(searchUrl, { headers });
-          if (sRes.ok) {
-            const sData = await sRes.json();
-            if (sData.results && sData.results.length > 0) {
-              resolvedTmdbId = sData.results[0].id;
-              // Já adiciona também os pôsteres principais dos resultados semelhantes
-              sData.results.slice(0, 4).forEach((r) => {
-                if (r.poster_path) {
-                  addPoster(
-                    `https://image.tmdb.org/t/p/w500${r.poster_path}`,
-                    r.title || 'TMDB'
-                  );
-                }
-              });
-            }
+    if (!resolvedTmdbId && title && title.trim().length >= 2) {
+      try {
+        const searchUrl = `https://api.themoviedb.org/3/search/movie?${auth.authParam}query=${encodeURIComponent(
+          title.trim()
+        )}&language=pt-BR`;
+        const sRes = await fetch(searchUrl, { headers: auth.headers });
+        if (sRes.ok) {
+          const sData = await sRes.json();
+          if (sData.results && sData.results.length > 0) {
+            resolvedTmdbId = sData.results[0].id;
+            sData.results.slice(0, 4).forEach((r) => {
+              if (r.poster_path) {
+                addPoster(
+                  `https://image.tmdb.org/t/p/w500${r.poster_path}`,
+                  r.title || 'TMDB'
+                );
+              }
+            });
           }
-        } catch (err) {
-          console.warn('Erro ao buscar ID do filme no TMDB para pôsteres:', err);
         }
+      } catch (err) {
+        console.warn('Erro ao buscar ID do filme no TMDB para pôsteres:', err);
       }
     }
 
-    // Busca a galeria completa de pôsteres do filme no TMDB (/movie/{id}/images)
     if (resolvedTmdbId) {
       try {
-        const imgUrl = `https://api.themoviedb.org/3/movie/${resolvedTmdbId}/images?${authParam}include_image_language=pt,en,null`;
-        const imgRes = await fetch(imgUrl, { headers });
+        const imgUrl = `https://api.themoviedb.org/3/movie/${resolvedTmdbId}/images?${auth.authParam}include_image_language=pt,en,null`;
+        const imgRes = await fetch(imgUrl, { headers: auth.headers });
         if (imgRes.ok) {
           const imgData = await imgRes.json();
           (imgData.posters || []).slice(0, 24).forEach((p, idx) => {
@@ -152,7 +238,6 @@ export async function fetchMoviePosters({ tmdbId, title }) {
     }
   }
 
-  // Complementa com resultados de alta resolução do catálogo alternativo se houver poucos pôsteres
   if (posters.length < 6 && title && title.trim().length >= 2) {
     try {
       const fallbackUrl = `https://itunes.apple.com/search?term=${encodeURIComponent(
@@ -171,9 +256,39 @@ export async function fetchMoviePosters({ tmdbId, title }) {
         });
       }
     } catch {
-      // ignora erro de fallback
+      // ignora
     }
   }
 
   return posters;
+}
+
+/**
+ * Busca filmes Em Cartaz (now_playing) e Próximas Estreias (upcoming) no Brasil pelo TMDB
+ */
+export async function fetchBrazilCinemaReleases(category = 'upcoming') {
+  const auth = getTmdbAuth();
+  if (!auth) return [];
+
+  try {
+    const endpoint = category === 'now_playing' ? 'now_playing' : 'upcoming';
+    const url = `https://api.themoviedb.org/3/movie/${endpoint}?${auth.authParam}language=pt-BR&region=BR&page=1`;
+    const res = await fetch(url, { headers: auth.headers });
+    if (!res.ok) return [];
+    const data = await res.json();
+
+    return (data.results || [])
+      .filter((item) => item.poster_path)
+      .map((item) => ({
+        tmdbId: item.id,
+        title: item.title || item.original_title,
+        originalTitle: item.original_title || item.title,
+        releaseDate: item.release_date || '',
+        posterUrl: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
+        overview: item.overview || '',
+      }));
+  } catch (err) {
+    console.warn('Erro ao buscar estreias do TMDB:', err);
+    return [];
+  }
 }
