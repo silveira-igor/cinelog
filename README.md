@@ -19,11 +19,7 @@ O **CineLog** é uma aplicação web progressiva (PWA) criada para registrar e a
 
 ---
 
-## 📸 Screenshots (Telas do App)
-
-> 💡 **Como colocar seus prints aqui:**
-> - **Opção 1 (Mais rápida pelo navegador no GitHub):** Clique no ícone de lápis (**Edit file**) neste `README.md` lá no GitHub e **arraste/cole (`Ctrl+V`)** seus prints diretamente nos blocos abaixo — o GitHub gera o link da imagem sozinho!
-> - **Opção 2 (Pela pasta do projeto):** Salve os prints na pasta `docs/screenshots/` com os nomes indicados abaixo e dê `git push`.
+## 📸 Screenshots
 
 ### 1. Tela Inicial (Resumo do Mês, Meta Anual, Dias sem ir ao Cinema e Últimas 4 Idas)
 <!-- Substitua ou cole seu print abaixo -->
@@ -34,21 +30,15 @@ O **CineLog** é uma aplicação web progressiva (PWA) criada para registrar e a
 ### 2. Galeria de Pôsteres & Diário Mensal Detalhado
 | Galeria de Pôsteres | Diário Mensal |
 | :---: | :---: |
-| ![Galeria](docs/screenshots/02-galeria.png) | ![Diário](docs/screenshots/03-diario.png) |
-
-*👉 Sugestão de print: Na esquerda, a aba **Galeria** com seus pôsteres escolhidos; na direita, a aba **Diário** mostrando a barra de cada mês com `Qtd de Filmes • Valor Gasto • Tempo de Tela • ACO/SOZ • Média de Nota`.*
+| ![Galeria](docs/screenshots/02-galeria.jpg) | ![Diário](docs/screenshots/03-diario.jpg) |
 
 ### 3. Estatísticas Completas & Evolução Mensal
-<!-- Substitua ou cole seu print abaixo -->
-![Estatísticas do CineLog](docs/screenshots/04-estatisticas.png)
-*👉 Sugestão de print: Aba **Estatísticas** destacando a Meta Anual, Gasto Médio por Ida, Tempo Total na Sala de Cinema, Gráfico Mensal (Jan–Dez), Dia da Semana Favorito e o ranking triplo de **Gêneros**, **Atores** e **Estúdios/Produtoras**.*
+![Estatísticas do CineLog](docs/screenshots/04-estatisticas.jpg)
 
 ### 4. Em Breve, Quero Ver no Cinema & Ficha Técnica
-| Próximas Estreias & Em Cartaz | Ficha Técnica do Filme |
+| Quero Ver no Cinema & Próximas Estreias | Ficha Técnica do Filme |
 | :---: | :---: |
-| ![Em Breve](docs/screenshots/05-em-breve.png) | ![Modal de Detalhes](docs/screenshots/06-detalhes-filme.png) |
-
-*👉 Sugestão de print: Página **Em Breve** com os filtros `📅 Mais Próximos` e `✨ Mais Aguardados`, e o modal aberto ao clicar em um filme exibindo estreia, duração, diretor, 3 atores principais, estúdio e sinopse.*
+| ![Em Breve](docs/screenshots/05-em-breve.jpg) | ![Modal de Detalhes](docs/screenshots/06-detalhes-filme.jpg) |
 
 ---
 
