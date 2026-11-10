@@ -1705,7 +1705,7 @@ export default function DataView({
                 })}
               </div>
 
-              {hasMoreReleases && (
+              {upcomingSubTab === 'upcoming' && hasMoreReleases && (
                 <div className="lb-load-more-wrap">
                   <button
                     type="button"
