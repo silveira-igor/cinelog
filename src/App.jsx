@@ -19,6 +19,7 @@ import {
   Check,
   Eye,
   Target,
+  Bookmark,
 } from 'lucide-react';
 import {
   fetchCinemaVisits,
@@ -38,7 +39,6 @@ import { StarDisplay } from './components/StarRating';
 import VisitModal from './components/VisitModal';
 import DataView from './components/DataView';
 import { ProfileAuthModal } from './components/SettingsAndPinModal';
-import { generatePageAiInsight } from './services/aiInsights';
 
 function formatShortVisitDateBR(dateStr) {
   if (!dateStr) return '';
@@ -226,17 +226,6 @@ export default function App() {
       goalPct,
     };
   }, [visits, annualGoal]);
-
-  const homeAiInsight = useMemo(
-    () =>
-      generatePageAiInsight({
-        page: 'home',
-        visits,
-        homeDashboard,
-        isDemoMode,
-      }),
-    [visits, homeDashboard, isDemoMode]
-  );
 
   const latestFourVisits = useMemo(() => visits.slice(0, 4), [visits]);
 
@@ -614,8 +603,8 @@ export default function App() {
               </div>
             </section>
 
-            {/* OS DOIS BOTÕES PRINCIPAIS NA HOME */}
-            <section className="lb-home-actions">
+            {/* BOTÕES PRINCIPAIS NA HOME */}
+            <section className="lb-home-actions lb-home-actions-3">
               <button
                 type="button"
                 className="lb-main-cta-btn add"
@@ -633,21 +622,18 @@ export default function App() {
                 <BarChart2 size={20} />
                 <span>Visualizar Dados</span>
               </button>
-            </section>
 
-            {/* ANÁLISE DE IA NA PÁGINA INICIAL */}
-            {homeAiInsight && (
-              <section className="lb-ai-insight-card">
-                <div className="lb-ai-insight-icon">
-                  <Sparkles size={18} />
-                </div>
-                <div className="lb-ai-insight-body">
-                  <span className="lb-ai-insight-badge">{homeAiInsight.badge}</span>
-                  <h4>{homeAiInsight.title}</h4>
-                  <p>{homeAiInsight.text}</p>
-                </div>
-              </section>
-            )}
+              <button
+                type="button"
+                className="lb-main-cta-btn upcoming"
+                onClick={() => setCurrentScreen('upcoming')}
+              >
+                <Bookmark size={20} />
+                <span>
+                  Em Breve{watchlist.length > 0 ? ` (${watchlist.length})` : ''}
+                </span>
+              </button>
+            </section>
 
             {/* ÚLTIMOS 4 FILMES NO CINEMA */}
             <section className="lb-recent-section">
@@ -803,6 +789,7 @@ export default function App() {
           </div>
         ) : (
           <DataView
+            mode={currentScreen}
             visits={visits}
             onBackHome={() => setCurrentScreen('home')}
             onAddClick={handleOpenAddModal}

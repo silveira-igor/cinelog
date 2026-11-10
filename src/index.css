@@ -2816,70 +2816,41 @@ select {
     display: none;
   }
 
-  .lb-ranking-triple {
+  .lb-ranking-triple,
+  .lb-home-actions-3 {
     grid-template-columns: 1fr !important;
   }
 }
 
-/* Card de Análise de IA em Cada Aba/Página */
-.lb-ai-insight-card {
-  display: flex;
-  align-items: flex-start;
+/* 3 Botões Principais na Home (Adicionar Ida, Visualizar Dados, Em Breve) */
+.lb-home-actions-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.9rem;
-  background: linear-gradient(
-    135deg,
-    rgba(64, 188, 244, 0.1) 0%,
-    rgba(0, 224, 84, 0.08) 55%,
-    rgba(255, 128, 0, 0.08) 100%
-  );
-  border: 1px solid rgba(64, 188, 244, 0.28);
-  border-radius: 11px;
-  padding: 0.9rem 1.05rem;
-  margin-bottom: 1.15rem;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
 }
 
-.lb-ai-insight-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  background: rgba(64, 188, 244, 0.16);
-  border: 1px solid rgba(64, 188, 244, 0.35);
+.lb-main-cta-btn.upcoming {
+  background: var(--lb-surface);
   color: var(--lb-blue);
-  display: flex;
+  border: 1px solid rgba(64, 188, 244, 0.32);
+}
+
+.lb-main-cta-btn.upcoming:hover {
+  background: rgba(64, 188, 244, 0.14);
+  border-color: var(--lb-blue);
+}
+
+.lb-upcoming-page-title {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.lb-ai-insight-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
-}
-
-.lb-ai-insight-badge {
-  font-size: 0.65rem;
+  gap: 0.5rem;
+  font-size: 0.92rem;
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: var(--lb-blue);
-}
-
-.lb-ai-insight-body h4 {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 800;
-  color: var(--lb-text);
-}
-
-.lb-ai-insight-body p {
-  margin: 0;
-  font-size: 0.82rem;
-  line-height: 1.45;
-  color: var(--lb-text-secondary);
+  background: rgba(64, 188, 244, 0.1);
+  border: 1px solid rgba(64, 188, 244, 0.28);
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
 }
 
 /* Grupo Estrelas + Data da Ida na Home */

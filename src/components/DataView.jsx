@@ -38,7 +38,6 @@ import {
   fetchBrazilCinemaReleases,
   searchMovies,
 } from '../services/tmdb';
-import { generatePageAiInsight } from '../services/aiInsights';
 
 const MONTH_NAMES = [
   'Janeiro',
@@ -105,6 +104,7 @@ function formatMinutesToHours(totalMinutes) {
 }
 
 export default function DataView({
+  mode = 'data',
   visits,
   onBackHome,
   onAddClick,
@@ -118,7 +118,13 @@ export default function DataView({
   onRefreshVisits,
   isReadOnlyVisitor = false,
 }) {
-  const [activeTab, setActiveTab] = useState('diary'); // 'diary' | 'grid' | 'stats' | 'upcoming'
+  const [activeTab, setActiveTab] = useState(
+    mode === 'upcoming' ? 'upcoming' : 'diary'
+  ); // 'diary' | 'grid' | 'stats' | 'upcoming'
+
+  useEffect(() => {
+    setActiveTab(mode === 'upcoming' ? 'upcoming' : 'diary');
+  }, [mode]);
   const [yearFilter, setYearFilter] = useState('ALL');
   const [monthFilter, setMonthFilter] = useState('ALL');
   const [formatFilter, setFormatFilter] = useState('ALL');
@@ -571,16 +577,6 @@ export default function DataView({
     };
   }, [filteredVisits, visits, yearFilter, monthFilter, annualGoal]);
 
-  const currentAiInsight = useMemo(() => {
-    return generatePageAiInsight({
-      page: activeTab,
-      visits: filteredVisits,
-      stats,
-      watchlist: sortedWatchlist,
-      annualGoal,
-    });
-  }, [activeTab, filteredVisits, stats, sortedWatchlist, annualGoal]);
-
   const handleSaveGoal = (e) => {
     e.preventDefault();
     const num = Math.max(1, parseInt(goalInput, 10) || 24);
@@ -606,42 +602,42 @@ export default function DataView({
 
   return (
     <div className="lb-dataview-container">
-      {/* Topo da página Visualizar Dados */}
+      {/* Topo da página Visualizar Dados ou Em Breve */}
       <div className="lb-dataview-topbar">
         <button type="button" className="lb-back-btn" onClick={onBackHome}>
           <ArrowLeft size={18} /> Voltar ao Início
         </button>
 
-        <div className="lb-view-tabs">
-          <button
-            type="button"
-            className={`lb-tab-btn ${activeTab === 'diary' ? 'active' : ''}`}
-            onClick={() => setActiveTab('diary')}
-          >
-            <CalendarIcon size={15} /> Diário
-          </button>
-          <button
-            type="button"
-            className={`lb-tab-btn ${activeTab === 'grid' ? 'active' : ''}`}
-            onClick={() => setActiveTab('grid')}
-          >
-            <Grid size={15} /> Galeria
-          </button>
-          <button
-            type="button"
-            className={`lb-tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
-            onClick={() => setActiveTab('stats')}
-          >
-            <BarChart3 size={15} /> Estatísticas
-          </button>
-          <button
-            type="button"
-            className={`lb-tab-btn ${activeTab === 'upcoming' ? 'active' : ''}`}
-            onClick={() => setActiveTab('upcoming')}
-          >
-            <Bookmark size={15} /> Em Breve ({watchlist.length})
-          </button>
-        </div>
+        {mode === 'upcoming' ? (
+          <div className="lb-upcoming-page-title">
+            <Bookmark size={16} />
+            <span>Em Breve & Quero Ver no Cinema</span>
+          </div>
+        ) : (
+          <div className="lb-view-tabs">
+            <button
+              type="button"
+              className={`lb-tab-btn ${activeTab === 'diary' ? 'active' : ''}`}
+              onClick={() => setActiveTab('diary')}
+            >
+              <CalendarIcon size={15} /> Diário
+            </button>
+            <button
+              type="button"
+              className={`lb-tab-btn ${activeTab === 'grid' ? 'active' : ''}`}
+              onClick={() => setActiveTab('grid')}
+            >
+              <Grid size={15} /> Galeria
+            </button>
+            <button
+              type="button"
+              className={`lb-tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
+              onClick={() => setActiveTab('stats')}
+            >
+              <BarChart3 size={15} /> Estatísticas
+            </button>
+          </div>
+        )}
 
         {!isReadOnlyVisitor && (
           <button
@@ -654,21 +650,7 @@ export default function DataView({
         )}
       </div>
 
-      {/* Card de Análise de IA da Aba Atual */}
-      {currentAiInsight && (
-        <div className="lb-ai-insight-card">
-          <div className="lb-ai-insight-icon">
-            <Sparkles size={18} />
-          </div>
-          <div className="lb-ai-insight-body">
-            <span className="lb-ai-insight-badge">{currentAiInsight.badge}</span>
-            <h4>{currentAiInsight.title}</h4>
-            <p>{currentAiInsight.text}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Barra de Filtros (oculta apenas na aba Em Breve) */}
+      {/* Barra de Filtros (oculta apenas na tela Em Breve) */}
       {activeTab !== 'upcoming' && (
         <>
           <div className="lb-filters-bar">
