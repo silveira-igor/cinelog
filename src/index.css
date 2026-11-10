@@ -1873,7 +1873,74 @@ select {
   padding: 0.35rem 0.6rem;
   border-radius: 6px;
   font-size: 0.72rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
   cursor: pointer;
+}
+
+.lb-btn-small-outline:hover {
+  border-color: var(--lb-blue);
+  color: var(--lb-blue);
+}
+
+/* Lista de Perfis (@usuario + PIN) */
+.lb-profile-subform {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.lb-profiles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 185px;
+  overflow-y: auto;
+}
+
+.lb-profile-row-item {
+  background: var(--lb-bg);
+  border: 1px solid var(--lb-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.lb-profile-row-item:hover {
+  border-color: rgba(64, 188, 244, 0.45);
+}
+
+.lb-profile-row-item.selected {
+  border-color: var(--lb-green);
+  background: rgba(0, 224, 84, 0.08);
+}
+
+.lb-profile-row-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lb-profile-row-info strong {
+  font-size: 0.88rem;
+  color: var(--lb-text);
+}
+
+.lb-profile-row-info span {
+  font-size: 0.72rem;
+  color: var(--lb-text-secondary);
+}
+
+.lb-profile-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 /* ============================================================================

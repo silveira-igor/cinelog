@@ -25,12 +25,16 @@ import {
   deleteCinemaVisit,
   getSmartSuggestions,
 } from './services/storage';
-import { isDeviceUnlocked } from './services/config';
+import {
+  getActiveProfileUsername,
+  setActiveProfileUsername,
+  isProfileUnlockedOnDevice,
+} from './services/config';
 import { StarDisplay } from './components/StarRating';
 import VisitModal from './components/VisitModal';
 import DataView from './components/DataView';
 import {
-  PinUnlockModal,
+  ProfileAuthModal,
   CloudSettingsModal,
 } from './components/SettingsAndPinModal';
 
@@ -52,30 +56,50 @@ const MONTH_NAMES_SHORT = [
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'data'
   const [visits, setVisits] = useState([]);
+  const [profiles, setProfiles] = useState([]);
+  const [activeUsername, setActiveUsername] = useState(() =>
+    getActiveProfileUsername()
+  );
   const [loading, setLoading] = useState(true);
   const [cloudActive, setCloudActive] = useState(false);
 
-  const [deviceUnlocked, setDeviceUnlocked] = useState(() => isDeviceUnlocked());
+  const [deviceUnlocked, setDeviceUnlocked] = useState(() =>
+    isProfileUnlockedOnDevice(getActiveProfileUsername())
+  );
 
   // Modais
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [editingVisit, setEditingVisit] = useState(null);
   const [visitToDelete, setVisitToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [pendingProtectedAction, setPendingProtectedAction] = useState(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
-  const loadVisits = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetchCinemaVisits();
-      setVisits(res.visits);
-      setCloudActive(res.cloudActive);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const loadVisits = useCallback(
+    async (overrideUser) => {
+      setLoading(true);
+      try {
+        const target =
+          overrideUser !== undefined ? overrideUser : getActiveProfileUsername();
+        const res = await fetchCinemaVisits(target);
+        setVisits(res.visits);
+        setProfiles(res.profiles);
+        setCloudActive(res.cloudActive);
+
+        if (res.activeUsername) {
+          setActiveUsername(res.activeUsername);
+          setActiveProfileUsername(res.activeUsername);
+          setDeviceUnlocked(isProfileUnlockedOnDevice(res.activeUsername));
+        } else {
+          setDeviceUnlocked(false);
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     loadVisits();
@@ -83,15 +107,11 @@ export default function App() {
 
   const suggestions = useMemo(() => getSmartSuggestions(visits), [visits]);
 
-  // Mini Dashboard da Home:
-  // 1. Filmes no Mês Atual + Comparativo acima/abaixo da média mensal
-  // 2. Filmes no Ano Atual
-  // 3. Média / Mês no Ano Atual
-  // 4. Contador de Dias sem ir ao Cinema
+  // Mini Dashboard da Home
   const homeDashboard = useMemo(() => {
     const now = new Date();
     const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth() + 1; // 1 a 12
+    const currentMonth = now.getMonth() + 1;
     const currentYearPrefix = String(currentYear);
     const currentYearMonthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
 
@@ -111,11 +131,10 @@ export default function App() {
     const monthlyAvgNum = yearCount / currentMonth;
     const monthlyAvg = monthlyAvgNum.toFixed(1).replace('.0', '');
 
-    // Comparativo do mês atual em relação à média mensal
     const diffFromAvg = monthCount - monthlyAvgNum;
     const diffFormatted = Math.abs(diffFromAvg).toFixed(1).replace('.0', '');
     let monthComparisonText = 'Na média mensal';
-    let monthComparisonStatus = 'neutral'; // 'above' | 'below' | 'neutral'
+    let monthComparisonStatus = 'neutral';
 
     if (diffFromAvg > 0.05) {
       monthComparisonText = `+${diffFormatted} acima da média`;
@@ -125,7 +144,6 @@ export default function App() {
       monthComparisonStatus = 'below';
     }
 
-    // Cálculo de dias sem ir ao cinema (baseado na ida mais recente até hoje)
     const todayLocalStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(
       now.getDate()
     ).padStart(2, '0')}`;
@@ -135,7 +153,6 @@ export default function App() {
     let lastVisitDateBR = null;
 
     if (visits.length > 0) {
-      // Pega a visita mais recente cuja data seja <= hoje (ou a primeira da lista)
       const pastOrTodayVisit =
         visits.find((v) => v.visit_date && String(v.visit_date) <= todayLocalStr) ||
         visits[0];
@@ -169,38 +186,39 @@ export default function App() {
     };
   }, [visits]);
 
-  // Últimos 4 filmes assistidos no cinema
   const latestFourVisits = useMemo(() => visits.slice(0, 4), [visits]);
 
-  const requireUnlockedDevice = (actionFn) => {
-    if (deviceUnlocked || isDeviceUnlocked()) {
+  // Exige um @usuario autenticado com PIN neste aparelho para adicionar/editar/excluir
+  const requireUnlockedProfile = (actionFn) => {
+    const currentUser = getActiveProfileUsername() || activeUsername;
+    if (currentUser && isProfileUnlockedOnDevice(currentUser)) {
       setDeviceUnlocked(true);
       actionFn();
     } else {
       setPendingProtectedAction(() => actionFn);
-      setIsPinModalOpen(true);
+      setIsProfileModalOpen(true);
     }
   };
 
   const handleOpenAddModal = () => {
-    requireUnlockedDevice(() => {
+    requireUnlockedProfile(() => {
       setEditingVisit(null);
       setIsVisitModalOpen(true);
     });
   };
 
   const handleOpenEditModal = (visit) => {
-    requireUnlockedDevice(() => {
+    requireUnlockedProfile(() => {
       setEditingVisit(visit);
       setIsVisitModalOpen(true);
     });
   };
 
   const handleDeleteVisit = (visit, options = {}) => {
-    requireUnlockedDevice(async () => {
+    requireUnlockedProfile(async () => {
       if (options.skipPrompt) {
         await deleteCinemaVisit(visit.id);
-        await loadVisits();
+        await loadVisits(activeUsername);
       } else {
         setVisitToDelete(visit);
       }
@@ -213,19 +231,20 @@ export default function App() {
     try {
       await deleteCinemaVisit(visitToDelete.id);
       setVisitToDelete(null);
-      await loadVisits();
+      await loadVisits(activeUsername);
     } finally {
       setIsDeleting(false);
     }
   };
 
   const handleSaveVisit = async (payload) => {
+    const owner = getActiveProfileUsername() || activeUsername;
     if (editingVisit) {
-      await updateCinemaVisit(editingVisit.id, payload);
+      await updateCinemaVisit(editingVisit.id, payload, owner);
     } else {
-      await createCinemaVisit(payload);
+      await createCinemaVisit(payload, owner);
     }
-    await loadVisits();
+    await loadVisits(owner);
   };
 
   return (
@@ -258,29 +277,24 @@ export default function App() {
               }
             >
               {cloudActive ? <Cloud size={14} /> : <HardDrive size={14} />}
-              <span>{cloudActive ? 'Nuvem Ativa' : 'Conectar Nuvem'}</span>
+              <span className="hide-xs">
+                {cloudActive ? 'Nuvem' : 'Conectar Nuvem'}
+              </span>
             </button>
 
+            {/* Botão de Perfil (@usuario + PIN) */}
             <button
               type="button"
               className={`lb-lock-badge ${deviceUnlocked ? 'unlocked' : 'locked'}`}
               onClick={() => {
-                if (!deviceUnlocked) {
-                  setPendingProtectedAction(null);
-                  setIsPinModalOpen(true);
-                } else {
-                  setIsSettingsModalOpen(true);
-                }
+                setPendingProtectedAction(null);
+                setIsProfileModalOpen(true);
               }}
-              title={
-                deviceUnlocked
-                  ? 'Dispositivo liberado permanentemente'
-                  : 'Clique para liberar este dispositivo com seu PIN'
-              }
+              title="Trocar de @usuario, entrar com PIN ou criar novo perfil"
             >
-              {deviceUnlocked ? <Unlock size={14} /> : <Lock size={14} />}
-              <span className="hide-xs">
-                {deviceUnlocked ? 'Liberado' : 'PIN'}
+              {deviceUnlocked ? <Unlock size={13} /> : <Lock size={13} />}
+              <span>
+                {activeUsername ? `@${activeUsername}` : 'Criar @usuario'}
               </span>
             </button>
 
@@ -288,7 +302,7 @@ export default function App() {
               type="button"
               className="lb-icon-btn"
               onClick={() => setIsSettingsModalOpen(true)}
-              title="Configurações de Nuvem (Supabase / TMDB / PIN)"
+              title="Configurações de Nuvem (Supabase / TMDB)"
             >
               <Settings size={18} />
             </button>
@@ -391,10 +405,12 @@ export default function App() {
               </button>
             </section>
 
-            {/* ÚLTIMOS 4 FILMES NO CINEMA (Pôster, Título, Nota e Tags SOZ/ACO, PRÉ/RE, XD/IMAX) */}
+            {/* ÚLTIMOS 4 FILMES NO CINEMA */}
             <section className="lb-recent-section">
               <div className="lb-section-header">
-                <span className="lb-section-title">ÚLTIMAS IDAS AO CINEMA</span>
+                <span className="lb-section-title">
+                  ÚLTIMAS IDAS AO CINEMA {activeUsername ? `DE @${activeUsername.toUpperCase()}` : ''}
+                </span>
                 {visits.length > 0 && (
                   <button
                     type="button"
@@ -415,10 +431,14 @@ export default function App() {
               ) : latestFourVisits.length === 0 ? (
                 <div className="lb-empty-home-box">
                   <Film size={36} />
-                  <h3>Seu diário de cinema está pronto</h3>
+                  <h3>
+                    {activeUsername
+                      ? `O diário de @${activeUsername} está pronto`
+                      : 'Seu diário de cinema está pronto'}
+                  </h3>
                   <p>
-                    Clique em <strong>+ Adicionar Ida</strong> acima para buscar seu
-                    primeiro filme pelo título e puxar o pôster oficial.
+                    Clique em <strong>+ Adicionar Ida</strong> acima para registrar um
+                    filme no seu perfil.
                   </p>
                 </div>
               ) : (
@@ -478,7 +498,7 @@ export default function App() {
                             </span>
                           </div>
 
-                          {/* Tag Inferior no Pôster: Companhia (Bonequinho Sozinho + SOZ ou Grupo + ACO) */}
+                          {/* Tag Inferior no Pôster: Companhia (SOZ ou ACO) */}
                           <div className="lb-poster-bottom-badges">
                             {visit.isAlone ? (
                               <span
@@ -604,16 +624,20 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal de PIN de Segurança */}
-      <PinUnlockModal
-        isOpen={isPinModalOpen}
+      {/* Modal de Perfis (@usuario + PIN) */}
+      <ProfileAuthModal
+        isOpen={isProfileModalOpen}
         onClose={() => {
-          setIsPinModalOpen(false);
+          setIsProfileModalOpen(false);
           setPendingProtectedAction(null);
         }}
-        onUnlocked={() => {
-          setDeviceUnlocked(true);
-          if (pendingProtectedAction) {
+        profiles={profiles}
+        activeUsername={activeUsername}
+        onProfileChanged={async (newUsername, isUnlockedNow) => {
+          setActiveUsername(newUsername);
+          setDeviceUnlocked(isUnlockedNow);
+          await loadVisits(newUsername);
+          if (isUnlockedNow && pendingProtectedAction) {
             pendingProtectedAction();
             setPendingProtectedAction(null);
           }
@@ -624,9 +648,12 @@ export default function App() {
       <CloudSettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
-        onSaved={() => loadVisits()}
+        onSaved={() => loadVisits(activeUsername)}
+        activeUsername={activeUsername}
         deviceUnlocked={deviceUnlocked}
-        onDeviceLockToggle={() => setDeviceUnlocked(isDeviceUnlocked())}
+        onDeviceLockToggle={() =>
+          setDeviceUnlocked(isProfileUnlockedOnDevice(activeUsername))
+        }
       />
     </div>
   );

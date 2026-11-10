@@ -1,8 +1,15 @@
 import { createClient } from '@supabase/supabase-js';
-import { getAppConfig, isSupabaseConfigured } from './config';
+import {
+  getAppConfig,
+  isSupabaseConfigured,
+  normalizeUsername,
+  markProfileUnlockedOnDevice,
+  setActiveProfileUsername,
+} from './config';
 
 const LOCAL_VISITS_KEY = 'cinelog_visits_v1';
 const REWATCH_TAG_TOKEN = '[REWATCH]';
+const PROFILE_ROW_MARKER = '__CINELOG_PROFILE__';
 
 let supabaseInstance = null;
 let lastUrl = '';
@@ -72,9 +79,6 @@ export function parseCompanions(companyValue) {
     .filter((c) => c && c.toLowerCase() !== 'sozinho');
 }
 
-/**
- * Serializa uma lista de companhias para salvar no banco (compatível com coluna text)
- */
 export function serializeCompanions(companionsList) {
   const clean = parseCompanions(companionsList);
   if (clean.length === 0) return 'Sozinho';
@@ -82,27 +86,46 @@ export function serializeCompanions(companionsList) {
 }
 
 /**
- * Codifica/decodifica a flag manual de "Já assisti antes na vida" usando o campo notes
- * para manter 100% de compatibilidade com a tabela atual do Supabase sem exigir ALTER TABLE.
+ * Extrai metadados embutidos no campo notes ([USER:username] e [REWATCH])
+ * mantendo 100% de compatibilidade com a tabela atual do Supabase sem exigir ALTER TABLE!
  */
-export function parseNotesAndManualRewatch(rawNotes, explicitManualFlag) {
-  const str = String(rawNotes || '');
-  const hasToken = str.includes(REWATCH_TAG_TOKEN);
-  const cleanNotes = str.replace(REWATCH_TAG_TOKEN, '').trim();
+export function parseNotesMetadata(rawNotes, explicitManualFlag, explicitOwner) {
+  let str = String(rawNotes || '');
+
+  // 1. Extrai dono do registro [USER:xxx]
+  let ownerUsername = normalizeUsername(explicitOwner || '');
+  const userMatch = str.match(/\[USER:([a-z0-9_.-]+)\]/i);
+  if (userMatch && userMatch[1]) {
+    ownerUsername = normalizeUsername(userMatch[1]);
+    str = str.replace(userMatch[0], '');
+  }
+
+  // 2. Extrai flag de Reassistido manual [REWATCH]
+  const hasRewatchToken = str.includes(REWATCH_TAG_TOKEN);
+  str = str.replace(REWATCH_TAG_TOKEN, '').trim();
+
   return {
-    isManualRewatch: Boolean(explicitManualFlag || hasToken),
-    cleanNotes,
+    ownerUsername,
+    isManualRewatch: Boolean(explicitManualFlag || hasRewatchToken),
+    cleanNotes: str,
   };
 }
 
-export function encodeNotesWithManualRewatch(cleanNotes, isManualRewatch) {
+export function encodeNotesMetadata({ cleanNotes, isManualRewatch, ownerUsername }) {
   const base = String(cleanNotes || '')
+    .replace(/\[USER:[a-z0-9_.-]+\]/gi, '')
     .replace(REWATCH_TAG_TOKEN, '')
     .trim();
-  if (isManualRewatch) {
-    return base ? `${REWATCH_TAG_TOKEN} ${base}` : REWATCH_TAG_TOKEN;
+
+  const prefixes = [];
+  const normUser = normalizeUsername(ownerUsername);
+  if (normUser) {
+    prefixes.push(`[USER:${normUser}]`);
   }
-  return base;
+  if (isManualRewatch) {
+    prefixes.push(REWATCH_TAG_TOKEN);
+  }
+  return [...prefixes, base].filter(Boolean).join(' ');
 }
 
 /**
@@ -130,7 +153,6 @@ export function computeReleaseTimingFlags(visitDateStr, releaseDateStr) {
       ? (vTime - rTime) / (1000 * 60 * 60 * 24)
       : 0;
 
-  // Superior a 1 ano após o lançamento oficial (tanto por diferença de anos > 1 quanto > 365 dias)
   const isReexibicao = visitYear - releaseYear > 1 || daysAfterRelease > 365;
 
   return { isPreRelease: false, isReexibicao };
@@ -145,15 +167,69 @@ function normalizeTitle(title) {
 }
 
 /**
- * Enriquecimento automático e retroativo de todas as idas cadastradas:
- * - isPreRelease (PRÉ): quando visit_date < release_date
- * - isReexibicao (RE): quando visit_date é superior a 1 ano após o lançamento oficial
- * - isRewatch (↻): quando já foi visto antes no sistema OU marcado manualmente como reassistido na vida
- * - isManualRewatch: flag individual se o usuário marcou que já tinha visto antes fora do sistema
- * - companionsList: array com cada pessoa que foi junto ([] se Sozinho)
- * - isAlone: true (SOZ) quando foi Sozinho, false (ACO) quando foi acompanhado
+ * Separa as linhas de perfil (__CINELOG_PROFILE__) das linhas de idas ao cinema
  */
-export function enrichVisitsWithAutoFlags(rawVisits) {
+function extractProfilesAndMovieRows(allRows) {
+  const profilesMap = new Map();
+  const movieRows = [];
+
+  // Ordena mais antigos primeiro para saber quem é o primeiro perfil (dono original)
+  const sortedByCreation = [...allRows].sort((a, b) =>
+    String(a.created_at || '').localeCompare(String(b.created_at || ''))
+  );
+
+  for (const row of sortedByCreation) {
+    if (row.title === PROFILE_ROW_MARKER) {
+      const username = normalizeUsername(row.original_title);
+      if (!username) continue;
+      let meta = {};
+      try {
+        meta = JSON.parse(row.notes || '{}');
+      } catch {
+        meta = {};
+      }
+      profilesMap.set(username, {
+        id: row.id,
+        username,
+        displayName: meta.displayName || username,
+        pin: String(meta.pin || '1234'),
+        createdAt: row.created_at,
+        isPrimary: profilesMap.size === 0,
+      });
+    } else {
+      movieRows.push(row);
+    }
+  }
+
+  const primaryProfileUsername =
+    profilesMap.size > 0 ? [...profilesMap.keys()][0] : '';
+
+  // Conta quantos filmes cada perfil tem (filmes antigos sem tag pertencem ao 1º perfil)
+  const countsByUser = new Map();
+  for (const m of movieRows) {
+    const { ownerUsername } = parseNotesMetadata(m.notes);
+    const effectiveOwner = ownerUsername || primaryProfileUsername;
+    if (effectiveOwner) {
+      countsByUser.set(effectiveOwner, (countsByUser.get(effectiveOwner) || 0) + 1);
+    }
+  }
+
+  const profiles = [...profilesMap.values()].map((p) => ({
+    ...p,
+    movieCount: countsByUser.get(p.username) || 0,
+  }));
+
+  return {
+    profiles,
+    primaryProfileUsername,
+    movieRows,
+  };
+}
+
+/**
+ * Enriquecimento automático e retroativo das idas de um perfil
+ */
+export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = '') {
   const chronological = [...rawVisits].sort((a, b) => {
     const dateDiff = String(a.visit_date || '').localeCompare(String(b.visit_date || ''));
     if (dateDiff !== 0) return dateDiff;
@@ -177,16 +253,19 @@ export function enrichVisitsWithAutoFlags(rawVisits) {
       visit.release_date
     );
 
-    const { isManualRewatch, cleanNotes } = parseNotesAndManualRewatch(
+    const { ownerUsername, isManualRewatch, cleanNotes } = parseNotesMetadata(
       visit.notes,
-      visit.is_manual_rewatch
+      visit.is_manual_rewatch,
+      visit.ownerUsername
     );
 
+    const effectiveOwner = ownerUsername || primaryProfileUsername;
     const companionsList = parseCompanions(visit.company);
     const isAlone = companionsList.length === 0;
 
     enrichedMap.set(visit.id, {
       ...visit,
+      ownerUsername: effectiveOwner,
       price_paid: Number(visit.price_paid || 0),
       rating: Number(visit.rating || 0),
       companionsList,
@@ -211,10 +290,13 @@ export function enrichVisitsWithAutoFlags(rawVisits) {
 }
 
 /**
- * Busca todas as idas (do Supabase se configurado, mantendo cache local)
+ * Busca todas as idas e perfis do Supabase (filtrando os filmes pelo @usuario ativo)
  */
-export async function fetchCinemaVisits() {
+export async function fetchCinemaVisits(requestedUsername = '') {
   const supabase = getSupabaseClient();
+  let allRows = [];
+  let cloudActive = false;
+  let cloudError = null;
 
   if (supabase) {
     const { data, error } = await supabase
@@ -225,36 +307,144 @@ export async function fetchCinemaVisits() {
 
     if (error) {
       console.warn('Erro ao buscar no Supabase, usando dados locais:', error.message);
-      return {
-        visits: enrichVisitsWithAutoFlags(getLocalVisitsRaw()),
-        cloudActive: false,
-        cloudError: error.message,
-      };
+      allRows = getLocalVisitsRaw();
+      cloudError = error.message;
+    } else {
+      allRows = data || [];
+      saveLocalVisitsRaw(allRows);
+      cloudActive = true;
     }
-
-    saveLocalVisitsRaw(data || []);
-    return {
-      visits: enrichVisitsWithAutoFlags(data || []),
-      cloudActive: true,
-      cloudError: null,
-    };
+  } else {
+    allRows = getLocalVisitsRaw();
   }
 
+  const { profiles, primaryProfileUsername, movieRows } =
+    extractProfilesAndMovieRows(allRows);
+
+  const targetUser = normalizeUsername(requestedUsername) || primaryProfileUsername;
+
+  // Filtra apenas os filmes que pertencem ao @usuario selecionado
+  // (Filmes antigos sem tag [USER:...] pertencem automaticamente ao 1º perfil criado)
+  const userMovieRows = movieRows.filter((row) => {
+    const { ownerUsername } = parseNotesMetadata(row.notes);
+    const effectiveOwner = ownerUsername || primaryProfileUsername;
+    if (!targetUser) return true;
+    return effectiveOwner === targetUser;
+  });
+
   return {
-    visits: enrichVisitsWithAutoFlags(getLocalVisitsRaw()),
-    cloudActive: false,
-    cloudError: null,
+    visits: enrichVisitsWithAutoFlags(userMovieRows, primaryProfileUsername),
+    profiles,
+    activeUsername: targetUser,
+    primaryProfileUsername,
+    untaggedMoviesCount: movieRows.filter(
+      (r) => !parseNotesMetadata(r.notes).ownerUsername
+    ).length,
+    cloudActive,
+    cloudError,
   };
 }
 
 /**
- * Cria uma nova ida ao cinema
+ * Cria um novo Perfil (@usuario + PIN) direto no Supabase sem precisar de nova tabela!
  */
-export async function createCinemaVisit(visitPayload) {
-  const encodedNotes = encodeNotesWithManualRewatch(
-    visitPayload.notes,
-    visitPayload.is_manual_rewatch
-  );
+export async function createUserProfile({ username, displayName, pin }) {
+  const cleanUser = normalizeUsername(username);
+  if (!cleanUser || cleanUser.length < 2) {
+    throw new Error('Escolha um @usuario válido (mínimo 2 letras/números).');
+  }
+  const cleanPin = String(pin || '').trim();
+  if (cleanPin.length < 3) {
+    throw new Error('Escolha um PIN de pelo menos 3 ou 4 dígitos.');
+  }
+
+  const state = await fetchCinemaVisits();
+  const exists = state.profiles.some((p) => p.username === cleanUser);
+  if (exists) {
+    throw new Error(`O perfil @${cleanUser} já existe. Faça login com o PIN dele!`);
+  }
+
+  const profileRowPayload = {
+    tmdb_id: null,
+    title: PROFILE_ROW_MARKER,
+    original_title: cleanUser,
+    poster_url: '',
+    release_date: null,
+    visit_date: new Date().toISOString().slice(0, 10),
+    ticket_origin: 'Club',
+    session_format: '2D',
+    audio_type: 'Legendado',
+    price_paid: 0,
+    cinema_location: '',
+    company: 'Sozinho',
+    rating: 0,
+    notes: JSON.stringify({
+      displayName: String(displayName || cleanUser).trim(),
+      pin: cleanPin,
+      createdAt: new Date().toISOString(),
+    }),
+  };
+
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('cinema_visits')
+      .insert([profileRowPayload])
+      .select()
+      .single();
+
+    if (error) throw new Error(`Erro ao criar perfil no Supabase: ${error.message}`);
+
+    const local = getLocalVisitsRaw();
+    saveLocalVisitsRaw([data, ...local]);
+  } else {
+    const localItem = {
+      ...profileRowPayload,
+      id: crypto.randomUUID ? crypto.randomUUID() : `prof-${Date.now()}`,
+      created_at: new Date().toISOString(),
+    };
+    const local = getLocalVisitsRaw();
+    saveLocalVisitsRaw([localItem, ...local]);
+  }
+
+  // Já ativa e libera este aparelho para o perfil recém-criado
+  setActiveProfileUsername(cleanUser);
+  markProfileUnlockedOnDevice(cleanUser);
+
+  return cleanUser;
+}
+
+/**
+ * Verifica o PIN de um @usuario e libera o aparelho permanentemente para aquela conta
+ */
+export async function authenticateProfileWithPin(username, inputPin) {
+  const cleanUser = normalizeUsername(username);
+  const state = await fetchCinemaVisits(cleanUser);
+  const foundProfile = state.profiles.find((p) => p.username === cleanUser);
+
+  if (!foundProfile) {
+    throw new Error(`Perfil @${cleanUser} não encontrado.`);
+  }
+
+  const expectedPin = String(foundProfile.pin || getAppConfig().appPin).trim();
+  if (String(inputPin || '').trim() === expectedPin) {
+    setActiveProfileUsername(cleanUser);
+    markProfileUnlockedOnDevice(cleanUser);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Cria uma nova ida ao cinema vinculada ao @usuario ativo
+ */
+export async function createCinemaVisit(visitPayload, ownerUsername) {
+  const activeUser = normalizeUsername(ownerUsername);
+  const encodedNotes = encodeNotesMetadata({
+    cleanNotes: visitPayload.notes,
+    isManualRewatch: visitPayload.is_manual_rewatch,
+    ownerUsername: activeUser,
+  });
 
   const cleanPayload = {
     tmdb_id: visitPayload.tmdb_id || null,
@@ -299,13 +489,17 @@ export async function createCinemaVisit(visitPayload) {
 }
 
 /**
- * Atualiza uma ida existente
+ * Atualiza uma ida existente preservando o @usuario dono
  */
-export async function updateCinemaVisit(id, visitPayload) {
-  const encodedNotes = encodeNotesWithManualRewatch(
-    visitPayload.notes,
-    visitPayload.is_manual_rewatch
+export async function updateCinemaVisit(id, visitPayload, ownerUsername) {
+  const activeUser = normalizeUsername(
+    ownerUsername || visitPayload.ownerUsername
   );
+  const encodedNotes = encodeNotesMetadata({
+    cleanNotes: visitPayload.notes,
+    isManualRewatch: visitPayload.is_manual_rewatch,
+    ownerUsername: activeUser,
+  });
 
   const cleanPayload = {
     tmdb_id: visitPayload.tmdb_id || null,
@@ -361,7 +555,7 @@ export async function deleteCinemaVisit(id) {
 }
 
 /**
- * Extrai sugestões inteligentes de Locais e Companhias individuais ordenadas pelas mais frequentes
+ * Extrai sugestões inteligentes de Locais e Companhias individuais do perfil atual
  */
 export function getSmartSuggestions(visits) {
   const locationCounts = new Map();

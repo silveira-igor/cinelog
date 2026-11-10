@@ -9,13 +9,23 @@ import {
   Copy,
   Database,
   ShieldCheck,
+  UserPlus,
+  UserCheck,
+  Eye,
+  AtSign,
 } from 'lucide-react';
 import {
   getAppConfig,
   saveAppConfig,
-  unlockDeviceWithPin,
-  lockDevice,
+  normalizeUsername,
+  isProfileUnlockedOnDevice,
+  lockProfileOnDevice,
+  setActiveProfileUsername,
 } from '../services/config';
+import {
+  createUserProfile,
+  authenticateProfileWithPin,
+} from '../services/storage';
 
 const SQL_SCHEMA_SNIPPET = `create table if not exists public.cinema_visits (
   id uuid primary key default gen_random_uuid(),
@@ -43,79 +53,304 @@ create policy "Acesso total cinema_visits"
   using (true)
   with check (true);`;
 
-export function PinUnlockModal({ isOpen, onClose, onUnlocked }) {
+/**
+ * Modal de Perfis (@usuario + PIN) — Permite Entrar, Trocar de Conta, Espiar ou Criar Novo Perfil
+ */
+export function ProfileAuthModal({
+  isOpen,
+  onClose,
+  profiles = [],
+  activeUsername = '',
+  onProfileChanged,
+}) {
+  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [selectedUser, setSelectedUser] = useState('');
   const [pin, setPin] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newDisplayName, setNewDisplayName] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (isOpen) {
-      setPin('');
-      setError('');
+    if (!isOpen) return;
+    setError('');
+    setPin('');
+    if (profiles.length === 0) {
+      setMode('register');
+    } else {
+      setMode('login');
+      setSelectedUser(activeUsername || profiles[0]?.username || '');
     }
-  }, [isOpen]);
+  }, [isOpen, profiles, activeUsername]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
-    if (unlockDeviceWithPin(pin)) {
-      onUnlocked();
-      onClose();
-    } else {
-      setError('PIN incorreto. (Dica: o PIN padrão inicial é 1234)');
+    const cleanTarget = normalizeUsername(selectedUser);
+    if (!cleanTarget) {
+      setError('Selecione ou digite um @usuario.');
+      return;
     }
+
+    setLoading(true);
+    setError('');
+    try {
+      const ok = await authenticateProfileWithPin(cleanTarget, pin);
+      if (ok) {
+        onProfileChanged(cleanTarget, true);
+        onClose();
+      } else {
+        setError('PIN incorreto para este @usuario.');
+      }
+    } catch (err) {
+      setError(err.message || 'Erro ao validar PIN.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateProfile = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const createdUsername = await createUserProfile({
+        username: newUsername,
+        displayName: newDisplayName || newUsername,
+        pin: newPin,
+      });
+      onProfileChanged(createdUsername, true);
+      onClose();
+    } catch (err) {
+      setError(err.message || 'Erro ao criar perfil.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewReadOnly = (username) => {
+    const clean = normalizeUsername(username);
+    if (!clean) return;
+    setActiveProfileUsername(clean);
+    onProfileChanged(clean, isProfileUnlockedOnDevice(clean));
+    onClose();
   };
 
   return (
     <div className="lb-modal-backdrop" onClick={onClose}>
       <div
         className="lb-modal-card lb-modal-small"
+        style={{ maxWidth: '480px' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="lb-modal-header">
           <div>
-            <span className="lb-eyebrow">SEGURANÇA DO DISPOSITIVO</span>
-            <h2>Liberar Dispositivo</h2>
+            <span className="lb-eyebrow">CONTAS E PERFIS (@USUARIO + PIN)</span>
+            <h2>
+              {mode === 'login' ? 'Entrar ou Trocar Perfil' : 'Criar Meu Perfil'}
+            </h2>
           </div>
           <button type="button" className="lb-icon-btn" onClick={onClose}>
             <X size={20} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="lb-modal-form">
-          <p className="lb-helper-text">
-            Digite seu PIN uma única vez neste celular ou computador. Ele ficará
-            salvo para sempre neste aparelho para você adicionar ou editar idas sem
-            precisar digitar novamente.
-          </p>
+        <div className="lb-modal-form">
+          {/* Abas Entrar vs Criar Novo Perfil */}
+          <div className="lb-segmented">
+            <button
+              type="button"
+              className={`lb-seg-btn ${mode === 'login' ? 'active' : ''}`}
+              onClick={() => {
+                setMode('login');
+                setError('');
+              }}
+            >
+              <UserCheck size={14} /> Já tenho @usuario
+            </button>
+            <button
+              type="button"
+              className={`lb-seg-btn ${mode === 'register' ? 'active' : ''}`}
+              onClick={() => {
+                setMode('register');
+                setError('');
+              }}
+            >
+              <UserPlus size={14} /> Criar Novo Perfil
+            </button>
+          </div>
 
           {error && <div className="lb-alert-error">{error}</div>}
 
-          <div className="lb-field-group">
-            <label className="lb-label">
-              <Lock size={14} /> PIN de Segurança
-            </label>
-            <input
-              type="password"
-              inputMode="numeric"
-              className="lb-input lb-pin-input"
-              placeholder="••••"
-              value={pin}
-              onChange={(e) => setPin(e.target.value)}
-              autoFocus
-              required
-            />
-          </div>
+          {mode === 'login' ? (
+            <form onSubmit={handleLoginSubmit} className="lb-profile-subform">
+              {profiles.length > 0 && (
+                <div className="lb-field-group">
+                  <label className="lb-label">Perfis Cadastrados na Nuvem</label>
+                  <div className="lb-profiles-list">
+                    {profiles.map((p) => {
+                      const isCurrent = selectedUser === p.username;
+                      const unlockedHere = isProfileUnlockedOnDevice(p.username);
+                      return (
+                        <div
+                          key={p.username}
+                          className={`lb-profile-row-item ${isCurrent ? 'selected' : ''}`}
+                          onClick={() => {
+                            setSelectedUser(p.username);
+                            if (unlockedHere) {
+                              setActiveProfileUsername(p.username);
+                              onProfileChanged(p.username, true);
+                              onClose();
+                            }
+                          }}
+                        >
+                          <div className="lb-profile-row-info">
+                            <strong>@{p.username}</strong>
+                            <span>
+                              {p.displayName} • {p.movieCount}{' '}
+                              {p.movieCount === 1 ? 'ida' : 'idas'}
+                            </span>
+                          </div>
 
-          <div className="lb-modal-footer">
-            <button type="button" className="lb-btn-secondary" onClick={onClose}>
-              Cancelar
-            </button>
-            <button type="submit" className="lb-btn-primary">
-              <Unlock size={16} /> Liberar este Aparelho
-            </button>
-          </div>
-        </form>
+                          <div className="lb-profile-row-actions">
+                            {unlockedHere ? (
+                              <span className="lb-status-pill unlocked">
+                                Liberado neste aparelho
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="lb-btn-small-outline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewReadOnly(p.username);
+                                }}
+                                title="Apenas ver a estante deste perfil sem editar"
+                              >
+                                <Eye size={12} /> Espiar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="lb-field-group">
+                <label className="lb-label">
+                  <AtSign size={14} /> Usuário (@usuario)
+                </label>
+                <input
+                  type="text"
+                  className="lb-input"
+                  placeholder="Ex: igor"
+                  value={selectedUser}
+                  onChange={(e) => setSelectedUser(normalizeUsername(e.target.value))}
+                  required
+                />
+              </div>
+
+              <div className="lb-field-group">
+                <label className="lb-label">
+                  <Lock size={14} /> PIN do Perfil @{selectedUser || 'usuario'}
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  className="lb-input lb-pin-input"
+                  placeholder="••••"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value)}
+                  required
+                />
+                <span className="lb-label-subtle">
+                  Digitando o PIN uma vez, seu perfil fica liberado para sempre neste
+                  aparelho.
+                </span>
+              </div>
+
+              <div className="lb-modal-footer">
+                <button type="button" className="lb-btn-secondary" onClick={onClose}>
+                  Cancelar
+                </button>
+                <button type="submit" className="lb-btn-primary" disabled={loading}>
+                  <Unlock size={16} />
+                  {loading ? 'Verificando...' : 'Entrar e Liberar Aparelho'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleCreateProfile} className="lb-profile-subform">
+              <p className="lb-helper-text">
+                Crie seu próprio <strong>@usuario</strong> e <strong>PIN</strong>. Seus
+                filmes e estatísticas ficam separados na nuvem!
+                {profiles.length === 0 && (
+                  <>
+                    {' '}
+                    Como este será o <strong>1º perfil criado</strong>, os filmes que já
+                    estavam cadastrados serão vinculados a você automaticamente!
+                  </>
+                )}
+              </p>
+
+              <div className="lb-two-cols">
+                <div className="lb-field-group">
+                  <label className="lb-label">
+                    <AtSign size={14} /> Escolha seu @usuario
+                  </label>
+                  <input
+                    type="text"
+                    className="lb-input"
+                    placeholder="Ex: igor"
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(normalizeUsername(e.target.value))}
+                    required
+                  />
+                </div>
+
+                <div className="lb-field-group">
+                  <label className="lb-label">Seu Nome</label>
+                  <input
+                    type="text"
+                    className="lb-input"
+                    placeholder="Ex: Igor Silveira"
+                    value={newDisplayName}
+                    onChange={(e) => setNewDisplayName(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="lb-field-group">
+                <label className="lb-label">
+                  <Lock size={14} /> Crie seu PIN Secreto (4 ou mais dígitos)
+                </label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  className="lb-input lb-pin-input"
+                  placeholder="••••"
+                  value={newPin}
+                  onChange={(e) => setNewPin(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div className="lb-modal-footer">
+                <button type="button" className="lb-btn-secondary" onClick={onClose}>
+                  Cancelar
+                </button>
+                <button type="submit" className="lb-btn-primary" disabled={loading}>
+                  <UserPlus size={16} />
+                  {loading ? 'Criando...' : 'Criar Meu Perfil'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -125,6 +360,7 @@ export function CloudSettingsModal({
   isOpen,
   onClose,
   onSaved,
+  activeUsername,
   deviceUnlocked,
   onDeviceLockToggle,
 }) {
@@ -172,7 +408,7 @@ export function CloudSettingsModal({
         <div className="lb-modal-header">
           <div>
             <span className="lb-eyebrow">NUVEM & INTEGRAÇÕES</span>
-            <h2>Configurar Supabase, TMDB e PIN</h2>
+            <h2>Configurar Supabase e TMDB</h2>
           </div>
           <button type="button" className="lb-icon-btn" onClick={onClose}>
             <X size={20} />
@@ -231,11 +467,6 @@ export function CloudSettingsModal({
               <Key size={16} />
               <strong>2. Chave do TMDB (The Movie Database)</strong>
             </div>
-            <p className="lb-helper-text">
-              Mesmo sem chave o app já busca pôsteres automaticamente! Colando sua
-              API Key do TMDB (v3 ou Read Token), a busca usa a base oficial do TMDB
-              em português.
-            </p>
             <div className="lb-field-group">
               <label className="lb-label">TMDB API Key (ou Read Access Token)</label>
               <input
@@ -248,44 +479,35 @@ export function CloudSettingsModal({
             </div>
           </div>
 
-          <div className="lb-settings-box">
-            <div className="lb-settings-box-header">
-              <ShieldCheck size={16} />
-              <strong>3. PIN de Segurança & Status deste Aparelho</strong>
-            </div>
-            <div className="lb-two-cols">
-              <div className="lb-field-group">
-                <label className="lb-label">PIN para Liberar Novos Dispositivos</label>
-                <input
-                  type="text"
-                  className="lb-input"
-                  value={appPin}
-                  onChange={(e) => setAppPin(e.target.value)}
-                />
+          {activeUsername && (
+            <div className="lb-settings-box">
+              <div className="lb-settings-box-header">
+                <ShieldCheck size={16} />
+                <strong>3. Sessão de @{activeUsername} neste Aparelho</strong>
               </div>
-
-              <div className="lb-field-group">
-                <label className="lb-label">Status neste navegador</label>
-                <div className="lb-device-status-row">
-                  <span className={`lb-status-pill ${deviceUnlocked ? 'unlocked' : 'locked'}`}>
-                    {deviceUnlocked ? 'Aparelho Liberado' : 'Modo Leitura (Bloqueado)'}
-                  </span>
-                  {deviceUnlocked && (
-                    <button
-                      type="button"
-                      className="lb-btn-small-outline"
-                      onClick={() => {
-                        lockDevice();
-                        onDeviceLockToggle();
-                      }}
-                    >
-                      Bloquear Aparelho
-                    </button>
-                  )}
-                </div>
+              <div className="lb-device-status-row">
+                <span
+                  className={`lb-status-pill ${deviceUnlocked ? 'unlocked' : 'locked'}`}
+                >
+                  {deviceUnlocked
+                    ? `@${activeUsername} Liberado`
+                    : `@${activeUsername} em Modo Leitura`}
+                </span>
+                {deviceUnlocked && (
+                  <button
+                    type="button"
+                    className="lb-btn-small-outline"
+                    onClick={() => {
+                      lockProfileOnDevice(activeUsername);
+                      onDeviceLockToggle();
+                    }}
+                  >
+                    Sair / Bloquear @{activeUsername} neste aparelho
+                  </button>
+                )}
               </div>
             </div>
-          </div>
+          )}
 
           <div className="lb-modal-footer">
             <button type="button" className="lb-btn-secondary" onClick={onClose}>
