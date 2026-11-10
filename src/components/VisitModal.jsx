@@ -13,8 +13,11 @@ import {
   RotateCcw,
   Loader2,
   Check,
+  UserPlus,
+  Trash2,
 } from 'lucide-react';
 import { searchMovies } from '../services/tmdb';
+import { parseCompanions, serializeCompanions } from '../services/storage';
 import { StarRatingInput } from './StarRating';
 
 const ORIGINS = ['Voucher', 'Club', 'Comprado'];
@@ -33,6 +36,7 @@ export default function VisitModal({
   isOpen,
   onClose,
   onSave,
+  onDelete,
   initialData = null,
   existingVisits = [],
   suggestions = { locations: [], companies: [] },
@@ -50,7 +54,11 @@ export default function VisitModal({
   const [audioType, setAudioType] = useState('Legendado');
   const [pricePaid, setPricePaid] = useState('0');
   const [cinemaLocation, setCinemaLocation] = useState('');
-  const [company, setCompany] = useState('Sozinho');
+
+  // Lista de companhias individuais ([] = Sozinho) + input para adicionar cada pessoa
+  const [companions, setCompanions] = useState([]);
+  const [companionInput, setCompanionInput] = useState('');
+
   const [rating, setRating] = useState(0);
   const [notes, setNotes] = useState('');
 
@@ -60,11 +68,14 @@ export default function VisitModal({
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     if (!isOpen) return;
     setErrorMsg('');
+    setConfirmingDelete(false);
+    setCompanionInput('');
 
     if (initialData) {
       setTitle(initialData.title || '');
@@ -79,7 +90,7 @@ export default function VisitModal({
       setAudioType(initialData.audio_type || 'Legendado');
       setPricePaid(String(initialData.price_paid ?? 0));
       setCinemaLocation(initialData.cinema_location || '');
-      setCompany(initialData.company || 'Sozinho');
+      setCompanions(parseCompanions(initialData.companionsList || initialData.company));
       setRating(Number(initialData.rating || 0));
       setNotes(initialData.notes || '');
       setShowDropdown(false);
@@ -96,7 +107,7 @@ export default function VisitModal({
       setAudioType('Legendado');
       setPricePaid('0');
       setCinemaLocation(suggestions.locations[0] || '');
-      setCompany('Sozinho');
+      setCompanions([]);
       setRating(0);
       setNotes('');
       setSearchResults([]);
@@ -163,12 +174,72 @@ export default function VisitModal({
     }
   };
 
+  // Adicionar uma companhia à lista
+  const handleAddCompanion = (nameToAdd) => {
+    const raw = String(nameToAdd ?? companionInput).trim();
+    if (!raw) return;
+
+    // Permite caso a pessoa digite mais de um separado por vírgula ou um por vez
+    const names = raw
+      .split(',')
+      .map((n) => n.trim())
+      .filter((n) => n && n.toLowerCase() !== 'sozinho');
+
+    if (names.length === 0) {
+      setCompanions([]);
+      setCompanionInput('');
+      return;
+    }
+
+    setCompanions((prev) => {
+      const existingLower = new Set(prev.map((p) => p.toLowerCase()));
+      const next = [...prev];
+      for (const n of names) {
+        if (!existingLower.has(n.toLowerCase())) {
+          existingLower.add(n.toLowerCase());
+          next.push(n);
+        }
+      }
+      return next;
+    });
+    setCompanionInput('');
+  };
+
+  const handleRemoveCompanion = (nameToRemove) => {
+    setCompanions((prev) => prev.filter((c) => c !== nameToRemove));
+  };
+
+  const handleToggleSuggestedCompanion = (person) => {
+    const exists = companions.some((c) => c.toLowerCase() === person.toLowerCase());
+    if (exists) {
+      setCompanions((prev) =>
+        prev.filter((c) => c.toLowerCase() !== person.toLowerCase())
+      );
+    } else {
+      handleAddCompanion(person);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const finalTitle = (title || searchQuery).trim();
     if (!finalTitle) {
       setErrorMsg('Informe o título do filme.');
       return;
+    }
+
+    // Se o usuário digitou um nome no campo de companhia e clicou direto em Salvar, inclui ele também!
+    let finalCompanions = [...companions];
+    if (companionInput.trim()) {
+      const extra = companionInput
+        .split(',')
+        .map((n) => n.trim())
+        .filter((n) => n && n.toLowerCase() !== 'sozinho');
+      for (const ex of extra) {
+        if (!finalCompanions.some((c) => c.toLowerCase() === ex.toLowerCase())) {
+          finalCompanions.push(ex);
+        }
+      }
     }
 
     setIsSaving(true);
@@ -186,13 +257,31 @@ export default function VisitModal({
         audio_type: audioType,
         price_paid: parseFloat(String(pricePaid).replace(',', '.')) || 0,
         cinema_location: cinemaLocation.trim(),
-        company: company.trim() || 'Sozinho',
+        companions: finalCompanions,
+        company: serializeCompanions(finalCompanions),
         rating: Number(rating || 0),
         notes: notes.trim(),
       });
       onClose();
     } catch (err) {
       setErrorMsg(err.message || 'Erro ao salvar ida ao cinema.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteClick = async () => {
+    if (!initialData || !onDelete) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    setIsSaving(true);
+    try {
+      await onDelete(initialData, { skipPrompt: true });
+      onClose();
+    } catch (err) {
+      setErrorMsg(err.message || 'Erro ao excluir ida.');
     } finally {
       setIsSaving(false);
     }
@@ -326,7 +415,7 @@ export default function VisitModal({
                 </div>
               </div>
 
-              {/* Link do Pôster (preenchido automaticamente, mas editável se quiser) */}
+              {/* Link do Pôster */}
               <div className="lb-field-group">
                 <label className="lb-label-subtle">
                   URL do Pôster (preenchido automaticamente na busca, ou cole um link)
@@ -349,7 +438,9 @@ export default function VisitModal({
                 <div className="lb-auto-flag-pill prerelease">
                   <Sparkles size={14} />
                   <span>
-                    <strong>Pré-estreia detectada!</strong> Sua ida ({visitDate.split('-').reverse().join('/')}) é anterior à estreia oficial ({releaseDate.split('-').reverse().join('/')}).
+                    <strong>Pré-estreia detectada!</strong> Sua ida (
+                    {visitDate.split('-').reverse().join('/')}) é anterior à estreia
+                    oficial ({releaseDate.split('-').reverse().join('/')}).
                   </span>
                 </div>
               )}
@@ -357,7 +448,8 @@ export default function VisitModal({
                 <div className="lb-auto-flag-pill rewatch">
                   <RotateCcw size={14} />
                   <span>
-                    <strong>Rewatch detectado!</strong> Você já assistiu a este filme {autoFlagsPreview.previousCount}x antes no cinema.
+                    <strong>Rewatch detectado!</strong> Você já assistiu a este filme{' '}
+                    {autoFlagsPreview.previousCount}x antes no cinema.
                   </span>
                 </div>
               )}
@@ -366,7 +458,9 @@ export default function VisitModal({
 
           {/* Avaliação Estilo Letterboxd (0.5 a 5.0 estrelas, sem coração) */}
           <div className="lb-field-group lb-rating-section">
-            <label className="lb-label">Sua Nota (Estilo Letterboxd — aceita meia estrela)</label>
+            <label className="lb-label">
+              Sua Nota (Estilo Letterboxd — aceita meia estrela)
+            </label>
             <StarRatingInput value={rating} onChange={setRating} />
           </div>
 
@@ -399,7 +493,9 @@ export default function VisitModal({
                   <button
                     key={fmt}
                     type="button"
-                    className={`lb-seg-btn ${sessionFormat === fmt ? 'active format-' + fmt.toLowerCase() : ''}`}
+                    className={`lb-seg-btn ${
+                      sessionFormat === fmt ? 'active format-' + fmt.toLowerCase() : ''
+                    }`}
                     onClick={() => setSessionFormat(fmt)}
                   >
                     {fmt}
@@ -481,52 +577,122 @@ export default function VisitModal({
             </div>
           </div>
 
-          {/* Companhia (Opção rápida Sozinho + Auto-completar Inteligente) */}
+          {/* Companhia (Adicionar cada pessoa individualmente ou marcar Sozinho) */}
           <div className="lb-field-group">
             <label className="lb-label">
-              <Users size={14} /> Companhia
+              <Users size={14} /> Companhia (adicione cada pessoa que foi com você)
             </label>
-            <div className="lb-company-row">
-              <button
-                type="button"
-                className={`lb-solo-toggle ${company.toLowerCase() === 'sozinho' ? 'active' : ''}`}
-                onClick={() => setCompany('Sozinho')}
-              >
-                <Check size={14} /> Sozinho
-              </button>
-              <input
-                type="text"
-                className="lb-input"
-                placeholder="Ou digite com quem você foi..."
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-              />
-            </div>
-            {suggestions.companies.length > 0 && (
-              <div className="lb-quick-chips">
-                <span className="lb-chips-caption">Frequentes:</span>
-                {suggestions.companies.map((comp) => (
-                  <button
-                    key={comp}
-                    type="button"
-                    className={`lb-chip ${company === comp ? 'active' : ''}`}
-                    onClick={() => setCompany(comp)}
-                  >
-                    {comp}
-                  </button>
-                ))}
+
+            <div className="lb-company-builder">
+              <div className="lb-company-input-row">
+                <button
+                  type="button"
+                  className={`lb-solo-toggle ${companions.length === 0 ? 'active' : ''}`}
+                  onClick={() => {
+                    setCompanions([]);
+                    setCompanionInput('');
+                  }}
+                >
+                  <Check size={14} /> Sozinho
+                </button>
+
+                <input
+                  type="text"
+                  className="lb-input"
+                  placeholder="Digite o nome e clique em + Adicionar..."
+                  value={companionInput}
+                  onChange={(e) => setCompanionInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCompanion();
+                    }
+                  }}
+                />
+
+                <button
+                  type="button"
+                  className="lb-add-companion-btn"
+                  onClick={() => handleAddCompanion()}
+                >
+                  <UserPlus size={15} /> Adicionar
+                </button>
               </div>
-            )}
+
+              {/* Lista de pessoas adicionadas nesta ida */}
+              <div className="lb-selected-companions">
+                {companions.length === 0 ? (
+                  <span className="lb-solo-status-badge">
+                    Indo <strong>Sozinho</strong> (adicione nomes acima se foi acompanhado)
+                  </span>
+                ) : (
+                  companions.map((person) => (
+                    <span key={person} className="lb-companion-tag">
+                      <span>{person}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCompanion(person)}
+                        title={`Remover ${person}`}
+                      >
+                        <X size={13} />
+                      </button>
+                    </span>
+                  ))
+                )}
+              </div>
+
+              {/* Sugestões Inteligentes de 1 toque */}
+              {suggestions.companies.length > 0 && (
+                <div className="lb-quick-chips">
+                  <span className="lb-chips-caption">Toque para adicionar/remover:</span>
+                  {suggestions.companies.map((person) => {
+                    const isSelected = companions.some(
+                      (c) => c.toLowerCase() === person.toLowerCase()
+                    );
+                    return (
+                      <button
+                        key={person}
+                        type="button"
+                        className={`lb-chip ${isSelected ? 'active' : ''}`}
+                        onClick={() => handleToggleSuggestedCompanion(person)}
+                      >
+                        {isSelected ? `✓ ${person}` : `+ ${person}`}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Botões de Ação */}
-          <div className="lb-modal-footer">
-            <button type="button" className="lb-btn-secondary" onClick={onClose}>
-              Cancelar
-            </button>
-            <button type="submit" className="lb-btn-primary" disabled={isSaving}>
-              {isSaving ? 'Salvando...' : initialData ? 'Salvar Alterações' : 'Salvar no Diário'}
-            </button>
+          {/* Botões de Ação (com opção de Deletar quando estiver editando) */}
+          <div className="lb-modal-footer lb-modal-footer-split">
+            <div>
+              {initialData && onDelete && (
+                <button
+                  type="button"
+                  className={`lb-btn-danger ${confirmingDelete ? 'confirming' : ''}`}
+                  onClick={handleDeleteClick}
+                  disabled={isSaving}
+                >
+                  <Trash2 size={15} />
+                  {confirmingDelete ? 'Confirmar Exclusão?' : 'Excluir Ida'}
+                </button>
+              )}
+            </div>
+
+            <div className="lb-modal-footer-right">
+              <button type="button" className="lb-btn-secondary" onClick={onClose}>
+                Cancelar
+              </button>
+              <button type="submit" className="lb-btn-primary" disabled={isSaving}>
+                {isSaving
+                  ? 'Salvando...'
+                  : initialData
+                  ? 'Salvar Alterações'
+                  : 'Salvar no Diário'}
+              </button>
+            </div>
           </div>
         </form>
       </div>

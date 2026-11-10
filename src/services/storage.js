@@ -38,6 +38,49 @@ function saveLocalVisitsRaw(visits) {
 }
 
 /**
+ * Converte o campo company (string ou array) em uma lista de nomes individuais.
+ * Retorna [] quando foi "Sozinho".
+ */
+export function parseCompanions(companyValue) {
+  if (!companyValue) return [];
+  if (Array.isArray(companyValue)) {
+    return companyValue
+      .map((c) => String(c || '').trim())
+      .filter((c) => c && c.toLowerCase() !== 'sozinho');
+  }
+
+  const str = String(companyValue).trim();
+  if (!str || str.toLowerCase() === 'sozinho') return [];
+
+  if (str.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(str);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((c) => String(c || '').trim())
+          .filter((c) => c && c.toLowerCase() !== 'sozinho');
+      }
+    } catch {
+      // continua com split por vírgula
+    }
+  }
+
+  return str
+    .split(',')
+    .map((c) => c.trim())
+    .filter((c) => c && c.toLowerCase() !== 'sozinho');
+}
+
+/**
+ * Serializa uma lista de companhias para salvar no banco (compatível com coluna text)
+ */
+export function serializeCompanions(companionsList) {
+  const clean = parseCompanions(companionsList);
+  if (clean.length === 0) return 'Sozinho';
+  return [...new Set(clean)].join(', ');
+}
+
+/**
  * Normaliza o título para comparação de Rewatch quando não há tmdb_id
  */
 function normalizeTitle(title) {
@@ -53,9 +96,9 @@ function normalizeTitle(title) {
  * - isPreRelease (Pré-estreia): quando visit_date < release_date
  * - isRewatch (Rewatch ↻): quando já existe uma ida anterior para o mesmo filme
  * - watchNumber: 1ª vez, 2ª vez, 3ª vez...
+ * - companionsList: array com cada pessoa que foi junto ([] se Sozinho)
  */
 export function enrichVisitsWithAutoFlags(rawVisits) {
-  // Ordena cronologicamente (do mais antigo para o mais recente) para detectar Rewatch corretamente
   const chronological = [...rawVisits].sort((a, b) => {
     const dateDiff = String(a.visit_date || '').localeCompare(String(b.visit_date || ''));
     if (dateDiff !== 0) return dateDiff;
@@ -78,17 +121,20 @@ export function enrichVisitsWithAutoFlags(rawVisits) {
     const isPreRelease =
       hasBothDates && String(visit.visit_date) < String(visit.release_date);
 
+    const companionsList = parseCompanions(visit.company);
+
     enrichedMap.set(visit.id, {
       ...visit,
       price_paid: Number(visit.price_paid || 0),
       rating: Number(visit.rating || 0),
+      companionsList,
+      company: serializeCompanions(companionsList),
       isPreRelease,
       isRewatch: previousCount > 0,
       watchNumber: currentCount,
     });
   }
 
-  // Retorna ordenado do mais recente para o mais antigo (padrão de diário)
   return [...rawVisits]
     .map((v) => enrichedMap.get(v.id) || v)
     .sort((a, b) => {
@@ -151,7 +197,7 @@ export async function createCinemaVisit(visitPayload) {
     audio_type: visitPayload.audio_type || 'Legendado',
     price_paid: Number(visitPayload.price_paid || 0),
     cinema_location: String(visitPayload.cinema_location || '').trim(),
-    company: String(visitPayload.company || 'Sozinho').trim() || 'Sozinho',
+    company: serializeCompanions(visitPayload.companions ?? visitPayload.company),
     rating: Number(visitPayload.rating || 0),
     notes: String(visitPayload.notes || '').trim(),
   };
@@ -197,7 +243,7 @@ export async function updateCinemaVisit(id, visitPayload) {
     audio_type: visitPayload.audio_type || 'Legendado',
     price_paid: Number(visitPayload.price_paid || 0),
     cinema_location: String(visitPayload.cinema_location || '').trim(),
-    company: String(visitPayload.company || 'Sozinho').trim() || 'Sozinho',
+    company: serializeCompanions(visitPayload.companions ?? visitPayload.company),
     rating: Number(visitPayload.rating || 0),
     notes: String(visitPayload.notes || '').trim(),
   };
@@ -239,7 +285,7 @@ export async function deleteCinemaVisit(id) {
 }
 
 /**
- * Extrai sugestões inteligentes de Locais e Companhias ordenadas pelas mais frequentes
+ * Extrai sugestões inteligentes de Locais e Companhias individuais ordenadas pelas mais frequentes
  */
 export function getSmartSuggestions(visits) {
   const locationCounts = new Map();
@@ -250,9 +296,10 @@ export function getSmartSuggestions(visits) {
     if (loc) {
       locationCounts.set(loc, (locationCounts.get(loc) || 0) + 1);
     }
-    const comp = String(v.company || '').trim();
-    if (comp && comp.toLowerCase() !== 'sozinho') {
-      companyCounts.set(comp, (companyCounts.get(comp) || 0) + 1);
+
+    const people = parseCompanions(v.companionsList || v.company);
+    for (const person of people) {
+      companyCounts.set(person, (companyCounts.get(person) || 0) + 1);
     }
   }
 
@@ -264,7 +311,7 @@ export function getSmartSuggestions(visits) {
   const companies = [...companyCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([name]) => name)
-    .slice(0, 8);
+    .slice(0, 10);
 
   return { locations, companies };
 }

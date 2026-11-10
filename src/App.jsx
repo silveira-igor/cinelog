@@ -10,6 +10,8 @@ import {
   Film,
   Sparkles,
   RotateCcw,
+  Trash2,
+  X,
 } from 'lucide-react';
 import {
   fetchCinemaVisits,
@@ -54,6 +56,8 @@ export default function App() {
   // Modais
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   const [editingVisit, setEditingVisit] = useState(null);
+  const [visitToDelete, setVisitToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pendingProtectedAction, setPendingProtectedAction] = useState(null);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -97,7 +101,6 @@ export default function App() {
       }
     }
 
-    // Média de filmes por mês no ano atual (dividido pelos meses decorridos até o mês atual)
     const monthlyAvg = (yearCount / currentMonth).toFixed(1).replace('.0', '');
 
     return {
@@ -137,15 +140,27 @@ export default function App() {
     });
   };
 
-  const handleDeleteVisit = (visit) => {
+  const handleDeleteVisit = (visit, options = {}) => {
     requireUnlockedDevice(async () => {
-      const confirmDelete = window.confirm(
-        `Deseja remover "${visit.title}" do seu diário de cinema?`
-      );
-      if (!confirmDelete) return;
-      await deleteCinemaVisit(visit.id);
-      await loadVisits();
+      if (options.skipPrompt) {
+        await deleteCinemaVisit(visit.id);
+        await loadVisits();
+      } else {
+        setVisitToDelete(visit);
+      }
     });
+  };
+
+  const confirmDeleteVisitModal = async () => {
+    if (!visitToDelete) return;
+    setIsDeleting(true);
+    try {
+      await deleteCinemaVisit(visitToDelete.id);
+      setVisitToDelete(null);
+      await loadVisits();
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const handleSaveVisit = async (payload) => {
@@ -334,7 +349,6 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* Selos automáticos sutis de Pré-estreia / Rewatch / Formato */}
                         <div className="lb-poster-top-badges">
                           {visit.isPreRelease && (
                             <span
@@ -364,6 +378,17 @@ export default function App() {
                         </h3>
                         <div className="lb-poster-meta-row">
                           <StarDisplay rating={visit.rating} size="sm" />
+                          <button
+                            type="button"
+                            className="lb-poster-delete-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteVisit(visit);
+                            }}
+                            title="Excluir esta ida"
+                          >
+                            <Trash2 size={13} />
+                          </button>
                         </div>
                       </div>
                     </article>
@@ -383,7 +408,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal de Adicionar / Editar Ida */}
+      {/* Modal de Adicionar / Editar Ida (com botão Excluir Ida incluso) */}
       <VisitModal
         isOpen={isVisitModalOpen}
         onClose={() => {
@@ -391,10 +416,66 @@ export default function App() {
           setEditingVisit(null);
         }}
         onSave={handleSaveVisit}
+        onDelete={handleDeleteVisit}
         initialData={editingVisit}
         existingVisits={visits}
         suggestions={suggestions}
       />
+
+      {/* Modal de Confirmação de Exclusão */}
+      {visitToDelete && (
+        <div
+          className="lb-modal-backdrop"
+          onClick={() => !isDeleting && setVisitToDelete(null)}
+        >
+          <div
+            className="lb-modal-card lb-modal-small"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="lb-modal-header">
+              <div>
+                <span className="lb-eyebrow">REMOVER DO DIÁRIO</span>
+                <h2>Excluir Ida ao Cinema?</h2>
+              </div>
+              <button
+                type="button"
+                className="lb-icon-btn"
+                onClick={() => setVisitToDelete(null)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="lb-modal-form">
+              <p className="lb-helper-text">
+                Tem certeza que deseja excluir{' '}
+                <strong style={{ color: '#fff' }}>{visitToDelete.title}</strong> do seu
+                histórico? Esta ação não pode ser desfeita.
+              </p>
+
+              <div className="lb-modal-footer">
+                <button
+                  type="button"
+                  className="lb-btn-secondary"
+                  onClick={() => setVisitToDelete(null)}
+                  disabled={isDeleting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="lb-btn-danger confirming"
+                  onClick={confirmDeleteVisitModal}
+                  disabled={isDeleting}
+                >
+                  <Trash2 size={15} />
+                  {isDeleting ? 'Excluindo...' : 'Sim, Excluir Ida'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal de PIN de Segurança (1 vez por dispositivo) */}
       <PinUnlockModal
