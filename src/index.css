@@ -1877,9 +1877,376 @@ select {
 }
 
 /* ============================================================================
-   RESPONSIVIDADE MOBILE (CELULAR)
+   RESPONSIVIDADE MOBILE (CELULAR) + NOVOS COMPONENTES E MARCAS OFICIAIS
    ============================================================================ */
+
+/* Mini Dashboard de 4 Métricas na Home */
+.lb-mini-dashboard-4 {
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+  padding: 1.15rem 0.85rem;
+}
+
+.lb-metric-value.purple {
+  color: #c084fc;
+}
+
+.lb-metric-subcaption {
+  font-size: 0.66rem;
+  color: var(--lb-text-muted);
+  margin-top: 1px;
+}
+
+.lb-metric-subpill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  margin: 2px auto 0;
+  width: fit-content;
+}
+
+.lb-metric-subpill.above {
+  background: rgba(0, 224, 84, 0.14);
+  color: var(--lb-green);
+  border: 1px solid rgba(0, 224, 84, 0.35);
+}
+
+.lb-metric-subpill.below {
+  background: rgba(255, 128, 0, 0.14);
+  color: var(--lb-orange);
+  border: 1px solid rgba(255, 128, 0, 0.35);
+}
+
+.lb-metric-subpill.neutral {
+  background: var(--lb-surface);
+  color: var(--lb-text-secondary);
+}
+
+/* Tags Inferiores no Pôster: SOZ (Bonequinho Sozinho) e ACO (Bonequinhos em Grupo) */
+.lb-poster-bottom-badges {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  right: 6px;
+  display: flex;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.lb-mini-badge.company-soz,
+.lb-tag-soz {
+  background: rgba(20, 24, 28, 0.88);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.lb-mini-badge.company-aco,
+.lb-tag-aco {
+  background: rgba(20, 24, 28, 0.88);
+  color: var(--lb-green);
+  border: 1px solid rgba(0, 224, 84, 0.45);
+}
+
+/* Tag Automática de Reexibição (RE) */
+.lb-mini-badge.reexibicao {
+  background: linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
+  color: #ffffff;
+  border: 1px solid rgba(216, 180, 254, 0.5);
+  box-shadow: 0 2px 6px rgba(126, 34, 206, 0.45);
+}
+
+.lb-tag-reexibicao,
+.lb-auto-flag-pill.reexibicao {
+  background: rgba(168, 85, 247, 0.16);
+  color: #d8b4fe;
+  border: 1px solid rgba(168, 85, 247, 0.45);
+}
+
+/* ============================================================================
+   ESTILIZAÇÃO OFICIAL DAS MARCAS IMAX E CINEMARK XD
+   ============================================================================ */
+/* IMAX Official Brand: Azul Ciano Elétrico IMAX (#00AEEF / #0072CE) sobre Preto/Navy Profundo */
+.lb-mini-badge.format.brand-imax,
+.lb-tag-format.brand-imax,
+.lb-seg-btn.active.format-imax {
+  background: linear-gradient(180deg, #07192d 0%, #030b14 100%);
+  color: #00aeef;
+  border: 1px solid #0088cc;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(0, 174, 239, 0.35);
+}
+
+/* Cinemark XD Official Brand: Vermelho Carmesim Oficial Cinemark XD (#E50914 -> #9B0000) com Branco */
+.lb-mini-badge.format.brand-xd,
+.lb-tag-format.brand-xd,
+.lb-seg-btn.active.format-xd {
+  background: linear-gradient(135deg, #e50914 0%, #99060d 100%);
+  color: #ffffff;
+  border: 1px solid #ff5a60;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(229, 9, 20, 0.4);
+}
+
+.lb-bar-fg.fmt-imax {
+  background: linear-gradient(90deg, #0072ce 0%, #00aeef 100%);
+}
+
+.lb-bar-fg.fmt-xd {
+  background: linear-gradient(90deg, #b80710 0%, #ff1f29 100%);
+}
+
+.brand-text-imax {
+  color: #00aeef;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.brand-text-xd {
+  color: #ff3b42;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.lb-bar-avg-tag {
+  font-size: 0.75rem;
+  color: var(--lb-green);
+  font-weight: 700;
+}
+
+.lb-mini-highlights-4 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* ============================================================================
+   SELETOR DE PÔSTERES (ESTILO LETTERBOXD) & BOTÃO REASSISTIDO MANUAL
+   ============================================================================ */
+.lb-poster-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 120px;
+}
+
+.lb-poster-preview-box.clickable {
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.lb-poster-preview-box.clickable:hover {
+  border-color: var(--lb-green);
+  transform: translateY(-1px);
+}
+
+.lb-change-poster-btn {
+  background: var(--lb-surface);
+  border: 1px solid var(--lb-border);
+  color: var(--lb-text-secondary);
+  border-radius: 6px;
+  padding: 0.38rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.lb-change-poster-btn:hover {
+  color: var(--lb-text);
+  border-color: var(--lb-blue);
+  background: var(--lb-surface-hover);
+}
+
+.lb-poster-picker-drawer {
+  background: var(--lb-bg);
+  border: 1px solid rgba(64, 188, 244, 0.35);
+  border-radius: 9px;
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.lb-poster-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--lb-blue);
+}
+
+.lb-poster-picker- header span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.lb-poster-picker-close {
+  background: var(--lb-surface);
+  border: 1px solid var(--lb-border);
+  color: var(--lb-text-secondary);
+  border-radius: 5px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.lb-poster-picker-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.25rem;
+  font-size: 0.82rem;
+  color: var(--lb-text-secondary);
+}
+
+.lb-poster-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 0.6rem;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.lb-poster-choice-card {
+  background: var(--lb-bg-elevated);
+  border: 2px solid transparent;
+  border-radius: 6px;
+  padding: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  cursor: pointer;
+  color: var(--lb-text-secondary);
+  transition: all 0.14s ease;
+}
+
+.lb-poster-choice-card img {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.lb-poster-choice-card span {
+  font-size: 0.62rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+.lb-poster-choice-card:hover {
+  border-color: var(--lb-blue);
+  color: var(--lb-text);
+}
+
+.lb-poster-choice-card.selected {
+  border-color: var(--lb-green);
+  background: rgba(0, 224, 84, 0.12);
+  color: var(--lb-green);
+}
+
+/* Linha de Nota + Opção de Reassistido Manual */
+.lb-rating-and-rewatch-row {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 0.85rem;
+  align-items: stretch;
+}
+
+.lb-manual-rewatch-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.lb-rewatch-toggle-box {
+  flex: 1;
+  background: var(--lb-bg);
+  border: 1px solid var(--lb-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  text-align: left;
+  color: var(--lb-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lb-rewatch-toggle-box:hover {
+  border-color: rgba(0, 224, 84, 0.45);
+}
+
+.lb-rewatch-toggle-box.active {
+  background: rgba(0, 224, 84, 0.1);
+  border-color: var(--lb-green);
+  color: var(--lb-text);
+}
+
+.lb-rewatch-icon-circle {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--lb-surface);
+  color: var(--lb-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.lb-rewatch-toggle-box.active .lb-rewatch-icon-circle {
+  background: var(--lb-green);
+  color: #08140c;
+}
+
+.lb-rewatch-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lb-rewatch-toggle-text strong {
+  font-size: 0.82rem;
+  color: var(--lb-text);
+}
+
+.lb-rewatch-toggle-box.active .lb-rewatch-toggle-text strong {
+  color: var(--lb-green);
+}
+
+.lb-rewatch-toggle-text span {
+  font-size: 0.68rem;
+  line-height: 1.25;
+  color: var(--lb-text-secondary);
+}
+
 @media (max-width: 720px) {
+  .lb-mini-dashboard-4 {
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem 0.5rem;
+  }
+
+  .lb-mini-dashboard-4 .lb-stat-divider {
+    display: none;
+  }
+
   .lb-four-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 0.85rem;
@@ -1888,16 +2255,18 @@ select {
   .lb-three-cols,
   .lb-two-cols,
   .lb-stats-kpi-grid,
-  .lb-stats-cards-grid {
+  .lb-stats-cards-grid,
+  .lb-rating-and-rewatch-row {
     grid-template-columns: 1fr;
   }
 
   .lb-movie-picker-layout {
-    grid-template-columns: 92px 1fr;
+    grid-template-columns: 96px 1fr;
   }
 
+  .lb-poster-column,
   .lb-poster-preview-box {
-    width: 92px;
+    width: 96px;
   }
 
   .lb-diary-row {

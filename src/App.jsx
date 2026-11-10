@@ -12,6 +12,11 @@ import {
   RotateCcw,
   Trash2,
   X,
+  User,
+  Users,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from 'lucide-react';
 import {
   fetchCinemaVisits,
@@ -50,7 +55,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [cloudActive, setCloudActive] = useState(false);
 
-  // Estado de desbloqueio permanente do aparelho via PIN
   const [deviceUnlocked, setDeviceUnlocked] = useState(() => isDeviceUnlocked());
 
   // Modais
@@ -77,10 +81,13 @@ export default function App() {
     loadVisits();
   }, [loadVisits]);
 
-  // Sugestões inteligentes de Locais e Companhias baseadas no histórico
   const suggestions = useMemo(() => getSmartSuggestions(visits), [visits]);
 
-  // Mini Dashboard da Home: APENAS Total Mês Atual, Total Ano Atual e Média Mensal no Ano Atual
+  // Mini Dashboard da Home:
+  // 1. Filmes no Mês Atual + Comparativo acima/abaixo da média mensal
+  // 2. Filmes no Ano Atual
+  // 3. Média / Mês no Ano Atual
+  // 4. Contador de Dias sem ir ao Cinema
   const homeDashboard = useMemo(() => {
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -101,7 +108,53 @@ export default function App() {
       }
     }
 
-    const monthlyAvg = (yearCount / currentMonth).toFixed(1).replace('.0', '');
+    const monthlyAvgNum = yearCount / currentMonth;
+    const monthlyAvg = monthlyAvgNum.toFixed(1).replace('.0', '');
+
+    // Comparativo do mês atual em relação à média mensal
+    const diffFromAvg = monthCount - monthlyAvgNum;
+    const diffFormatted = Math.abs(diffFromAvg).toFixed(1).replace('.0', '');
+    let monthComparisonText = 'Na média mensal';
+    let monthComparisonStatus = 'neutral'; // 'above' | 'below' | 'neutral'
+
+    if (diffFromAvg > 0.05) {
+      monthComparisonText = `+${diffFormatted} acima da média`;
+      monthComparisonStatus = 'above';
+    } else if (diffFromAvg < -0.05) {
+      monthComparisonText = `-${diffFormatted} abaixo da média`;
+      monthComparisonStatus = 'below';
+    }
+
+    // Cálculo de dias sem ir ao cinema (baseado na ida mais recente até hoje)
+    const todayLocalStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(
+      now.getDate()
+    ).padStart(2, '0')}`;
+    const todayMidnight = new Date(`${todayLocalStr}T00:00:00`).getTime();
+
+    let daysSinceLastVisit = null;
+    let lastVisitDateBR = null;
+
+    if (visits.length > 0) {
+      // Pega a visita mais recente cuja data seja <= hoje (ou a primeira da lista)
+      const pastOrTodayVisit =
+        visits.find((v) => v.visit_date && String(v.visit_date) <= todayLocalStr) ||
+        visits[0];
+
+      if (pastOrTodayVisit && pastOrTodayVisit.visit_date) {
+        const vDateStr = String(pastOrTodayVisit.visit_date).slice(0, 10);
+        const visitMidnight = new Date(`${vDateStr}T00:00:00`).getTime();
+        if (!Number.isNaN(visitMidnight)) {
+          const rawDays = Math.round(
+            (todayMidnight - visitMidnight) / (1000 * 60 * 60 * 24)
+          );
+          daysSinceLastVisit = Math.max(0, rawDays);
+          const parts = vDateStr.split('-');
+          if (parts.length === 3) {
+            lastVisitDateBR = `${parts[2]}/${parts[1]}`;
+          }
+        }
+      }
+    }
 
     return {
       currentMonthLabel: MONTH_NAMES_SHORT[currentMonth - 1],
@@ -109,13 +162,16 @@ export default function App() {
       monthCount,
       yearCount,
       monthlyAvg,
+      monthComparisonText,
+      monthComparisonStatus,
+      daysSinceLastVisit,
+      lastVisitDateBR,
     };
   }, [visits]);
 
   // Últimos 4 filmes assistidos no cinema
   const latestFourVisits = useMemo(() => visits.slice(0, 4), [visits]);
 
-  // Proteção por PIN (pede 1 única vez por dispositivo e libera para sempre)
   const requireUnlockedDevice = (actionFn) => {
     if (deviceUnlocked || isDeviceUnlocked()) {
       setDeviceUnlocked(true);
@@ -244,17 +300,33 @@ export default function App() {
       <main className="lb-main-content">
         {currentScreen === 'home' ? (
           <div className="lb-home-view">
-            {/* MINI DASHBOARD (Apenas Mês Atual, Ano Atual e Média Mensal no Ano Atual) */}
-            <section className="lb-mini-dashboard" aria-label="Resumo do Ano">
+            {/* MINI DASHBOARD NA TELA INICIAL */}
+            <section className="lb-mini-dashboard lb-mini-dashboard-4" aria-label="Resumo">
+              {/* 1. No Mês + Comparativo com a Média Mensal */}
               <div className="lb-stat-metric">
                 <span className="lb-metric-value">{homeDashboard.monthCount}</span>
                 <span className="lb-metric-label">
                   NO MÊS ({homeDashboard.currentMonthLabel.toUpperCase()})
                 </span>
+                <span
+                  className={`lb-metric-subpill ${homeDashboard.monthComparisonStatus}`}
+                >
+                  {homeDashboard.monthComparisonStatus === 'above' && (
+                    <TrendingUp size={11} />
+                  )}
+                  {homeDashboard.monthComparisonStatus === 'below' && (
+                    <TrendingDown size={11} />
+                  )}
+                  {homeDashboard.monthComparisonStatus === 'neutral' && (
+                    <Minus size={11} />
+                  )}
+                  <span>{homeDashboard.monthComparisonText}</span>
+                </span>
               </div>
 
               <div className="lb-stat-divider" />
 
+              {/* 2. Total no Ano Atual */}
               <div className="lb-stat-metric">
                 <span className="lb-metric-value green">
                   {homeDashboard.yearCount}
@@ -262,16 +334,38 @@ export default function App() {
                 <span className="lb-metric-label">
                   NO ANO ({homeDashboard.currentYear})
                 </span>
+                <span className="lb-metric-subcaption">Idas em {homeDashboard.currentYear}</span>
               </div>
 
               <div className="lb-stat-divider" />
 
+              {/* 3. Média / Mês no Ano Atual */}
               <div className="lb-stat-metric">
                 <span className="lb-metric-value blue">
                   {homeDashboard.monthlyAvg}
                 </span>
                 <span className="lb-metric-label">
                   MÉDIA / MÊS ({homeDashboard.currentYear})
+                </span>
+                <span className="lb-metric-subcaption">Filmes por mês</span>
+              </div>
+
+              <div className="lb-stat-divider" />
+
+              {/* 4. Contador de Dias sem ir ao Cinema */}
+              <div className="lb-stat-metric">
+                <span className="lb-metric-value purple">
+                  {homeDashboard.daysSinceLastVisit === null
+                    ? '—'
+                    : homeDashboard.daysSinceLastVisit}
+                </span>
+                <span className="lb-metric-label">DIAS SEM IR AO CINEMA</span>
+                <span className="lb-metric-subcaption">
+                  {homeDashboard.daysSinceLastVisit === null
+                    ? 'Sem registros'
+                    : homeDashboard.daysSinceLastVisit === 0
+                    ? 'Foi ao cinema hoje!'
+                    : `Última ida: ${homeDashboard.lastVisitDateBR}`}
                 </span>
               </div>
             </section>
@@ -297,7 +391,7 @@ export default function App() {
               </button>
             </section>
 
-            {/* ÚLTIMOS 4 FILMES NO CINEMA (Pôster, Título e Nota) */}
+            {/* ÚLTIMOS 4 FILMES NO CINEMA (Pôster, Título, Nota e Tags SOZ/ACO, PRÉ/RE, XD/IMAX) */}
             <section className="lb-recent-section">
               <div className="lb-section-header">
                 <span className="lb-section-title">ÚLTIMAS IDAS AO CINEMA</span>
@@ -329,70 +423,103 @@ export default function App() {
                 </div>
               ) : (
                 <div className="lb-four-grid">
-                  {latestFourVisits.map((visit) => (
-                    <article
-                      key={visit.id}
-                      className="lb-poster-card"
-                      onClick={() => handleOpenEditModal(visit)}
-                    >
-                      <div className="lb-poster-frame">
-                        {visit.poster_url ? (
-                          <img
-                            src={visit.poster_url}
-                            alt={visit.title}
-                            className="lb-poster-img"
-                          />
-                        ) : (
-                          <div className="lb-poster-fallback">
-                            <Film size={28} />
-                            <span>{visit.title}</span>
+                  {latestFourVisits.map((visit) => {
+                    const fmtKey = String(visit.session_format || '2D').toLowerCase();
+                    return (
+                      <article
+                        key={visit.id}
+                        className="lb-poster-card"
+                        onClick={() => handleOpenEditModal(visit)}
+                      >
+                        <div className="lb-poster-frame">
+                          {visit.poster_url ? (
+                            <img
+                              src={visit.poster_url}
+                              alt={visit.title}
+                              className="lb-poster-img"
+                            />
+                          ) : (
+                            <div className="lb-poster-fallback">
+                              <Film size={28} />
+                              <span>{visit.title}</span>
+                            </div>
+                          )}
+
+                          {/* Tags Superiores: PRÉ / RE / Rewatch / Formato Oficial (IMAX / XD) */}
+                          <div className="lb-poster-top-badges">
+                            {visit.isPreRelease && (
+                              <span
+                                className="lb-mini-badge prerelease"
+                                title="Pré-estreia (assistido antes do lançamento oficial)"
+                              >
+                                <Sparkles size={10} /> PRÉ
+                              </span>
+                            )}
+                            {visit.isReexibicao && (
+                              <span
+                                className="lb-mini-badge reexibicao"
+                                title="Reexibição (assistido mais de 1 ano após o lançamento oficial)"
+                              >
+                                RE
+                              </span>
+                            )}
+                            {visit.isRewatch && (
+                              <span
+                                className="lb-mini-badge rewatch"
+                                title="Reassistido (Rewatch)"
+                              >
+                                <RotateCcw size={10} />
+                              </span>
+                            )}
+                            <span
+                              className={`lb-mini-badge format brand-${fmtKey}`}
+                            >
+                              {visit.session_format}
+                            </span>
                           </div>
-                        )}
 
-                        <div className="lb-poster-top-badges">
-                          {visit.isPreRelease && (
-                            <span
-                              className="lb-mini-badge prerelease"
-                              title="Pré-estreia detectada automaticamente"
-                            >
-                              <Sparkles size={10} /> PRÉ
-                            </span>
-                          )}
-                          {visit.isRewatch && (
-                            <span
-                              className="lb-mini-badge rewatch"
-                              title="Rewatch detectado automaticamente"
-                            >
-                              <RotateCcw size={10} /> ↻
-                            </span>
-                          )}
-                          <span className="lb-mini-badge format">
-                            {visit.session_format}
-                          </span>
+                          {/* Tag Inferior no Pôster: Companhia (Bonequinho Sozinho + SOZ ou Grupo + ACO) */}
+                          <div className="lb-poster-bottom-badges">
+                            {visit.isAlone ? (
+                              <span
+                                className="lb-mini-badge company-soz"
+                                title="Assistiu Sozinho"
+                              >
+                                <User size={10} strokeWidth={2.5} /> SOZ
+                              </span>
+                            ) : (
+                              <span
+                                className="lb-mini-badge company-aco"
+                                title={`Acompanhado: ${visit.company}`}
+                              >
+                                <Users size={10} strokeWidth={2.5} /> ACO
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="lb-poster-caption">
-                        <h3 className="lb-poster-title" title={visit.title}>
-                          {visit.title}
-                        </h3>
-                        <div className="lb-poster-meta-row">
-                          <StarDisplay rating={visit.rating} size="sm" />
-                          <button
-                            type="button"
-                            className="lb-poster-delete-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteVisit(visit);
-                            }}
-                            title="Excluir esta ida"
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                        <div className="lb-poster-caption">
+                          <h3 className="lb-poster-title" title={visit.title}>
+                            {visit.title}
+                          </h3>
+                          <div className="lb-poster-meta-row">
+                            <StarDisplay rating={visit.rating} size="sm" />
+                            <button
+                              type="button"
+                              className="lb-poster-delete-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteVisit(visit);
+                              }}
+                              title="Excluir esta ida"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    </article>
-                  ))}
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -408,7 +535,7 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal de Adicionar / Editar Ida (com botão Excluir Ida incluso) */}
+      {/* Modal de Adicionar / Editar Ida */}
       <VisitModal
         isOpen={isVisitModalOpen}
         onClose={() => {
@@ -477,7 +604,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal de PIN de Segurança (1 vez por dispositivo) */}
+      {/* Modal de PIN de Segurança */}
       <PinUnlockModal
         isOpen={isPinModalOpen}
         onClose={() => {
@@ -493,7 +620,7 @@ export default function App() {
         }}
       />
 
-      {/* Modal de Configurações (Supabase, TMDB e PIN) */}
+      {/* Modal de Configurações */}
       <CloudSettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}

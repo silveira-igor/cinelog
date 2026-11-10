@@ -15,9 +15,15 @@ import {
   Check,
   UserPlus,
   Trash2,
+  Image as ImageIcon,
+  History,
 } from 'lucide-react';
-import { searchMovies } from '../services/tmdb';
-import { parseCompanions, serializeCompanions } from '../services/storage';
+import { searchMovies, fetchMoviePosters } from '../services/tmdb';
+import {
+  parseCompanions,
+  serializeCompanions,
+  computeReleaseTimingFlags,
+} from '../services/storage';
 import { StarRatingInput } from './StarRating';
 
 const ORIGINS = ['Voucher', 'Club', 'Comprado'];
@@ -55,6 +61,9 @@ export default function VisitModal({
   const [pricePaid, setPricePaid] = useState('0');
   const [cinemaLocation, setCinemaLocation] = useState('');
 
+  // Opção manual: já assistiu a este filme antes na vida (mesmo fora do sistema)
+  const [isManualRewatch, setIsManualRewatch] = useState(false);
+
   // Lista de companhias individuais ([] = Sozinho) + input para adicionar cada pessoa
   const [companions, setCompanions] = useState([]);
   const [companionInput, setCompanionInput] = useState('');
@@ -67,6 +76,12 @@ export default function VisitModal({
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
+
+  // Seletor manual de Pôsteres (Estilo Letterboxd)
+  const [showPosterPicker, setShowPosterPicker] = useState(false);
+  const [availablePosters, setAvailablePosters] = useState([]);
+  const [loadingPosters, setLoadingPosters] = useState(false);
+
   const [isSaving, setIsSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -76,6 +91,8 @@ export default function VisitModal({
     setErrorMsg('');
     setConfirmingDelete(false);
     setCompanionInput('');
+    setShowPosterPicker(false);
+    setAvailablePosters([]);
 
     if (initialData) {
       setTitle(initialData.title || '');
@@ -91,6 +108,7 @@ export default function VisitModal({
       setPricePaid(String(initialData.price_paid ?? 0));
       setCinemaLocation(initialData.cinema_location || '');
       setCompanions(parseCompanions(initialData.companionsList || initialData.company));
+      setIsManualRewatch(Boolean(initialData.isManualRewatch || initialData.isRewatch));
       setRating(Number(initialData.rating || 0));
       setNotes(initialData.notes || '');
       setShowDropdown(false);
@@ -108,6 +126,7 @@ export default function VisitModal({
       setPricePaid('0');
       setCinemaLocation(suggestions.locations[0] || '');
       setCompanions([]);
+      setIsManualRewatch(false);
       setRating(0);
       setNotes('');
       setSearchResults([]);
@@ -134,10 +153,12 @@ export default function VisitModal({
     return () => clearTimeout(timer);
   }, [searchQuery, showDropdown, isOpen]);
 
-  // Detecção automática em tempo real de Pré-estreia e Rewatch
+  // Detecção automática em tempo real de Pré-estreia (PRÉ), Reexibição (RE) e Rewatch
   const autoFlagsPreview = useMemo(() => {
-    const isPreRelease =
-      Boolean(visitDate && releaseDate) && String(visitDate) < String(releaseDate);
+    const { isPreRelease, isReexibicao } = computeReleaseTimingFlags(
+      visitDate,
+      releaseDate
+    );
 
     const normCurrent = normalizeTitle(title);
     const otherVisitsForSameMovie = existingVisits.filter((v) => {
@@ -147,13 +168,15 @@ export default function VisitModal({
       return false;
     });
 
-    const isRewatch = otherVisitsForSameMovie.length > 0;
+    const isAutoRewatch = otherVisitsForSameMovie.length > 0;
     return {
       isPreRelease,
-      isRewatch,
+      isReexibicao,
+      isAutoRewatch,
+      isEffectiveRewatch: isAutoRewatch || isManualRewatch,
       previousCount: otherVisitsForSameMovie.length,
     };
-  }, [visitDate, releaseDate, title, tmdbId, existingVisits, initialData]);
+  }, [visitDate, releaseDate, title, tmdbId, existingVisits, initialData, isManualRewatch]);
 
   if (!isOpen) return null;
 
@@ -165,12 +188,31 @@ export default function VisitModal({
     if (movie.posterUrl) setPosterUrl(movie.posterUrl);
     if (movie.releaseDate) setReleaseDate(movie.releaseDate);
     setShowDropdown(false);
+    setShowPosterPicker(false);
   };
 
+  // Preserva o Valor Pago ao trocar a origem do ingresso (sem zerar automaticamente)
   const handleOriginChange = (origin) => {
     setTicketOrigin(origin);
-    if (origin === 'Voucher' || origin === 'Club') {
-      setPricePaid('0');
+  };
+
+  // Abre o seletor manual de pôsteres (estilo Letterboxd) buscando opções do TMDB / catálogo
+  const handleOpenPosterGallery = async () => {
+    const movieTitle = (title || searchQuery).trim();
+    if (!movieTitle && !tmdbId) {
+      setErrorMsg('Digite ou selecione um filme primeiro para buscar os pôsteres.');
+      return;
+    }
+    setErrorMsg('');
+    setShowPosterPicker((prev) => !prev);
+    if (!showPosterPicker) {
+      setLoadingPosters(true);
+      try {
+        const list = await fetchMoviePosters({ tmdbId, title: movieTitle });
+        setAvailablePosters(list);
+      } finally {
+        setLoadingPosters(false);
+      }
     }
   };
 
@@ -179,7 +221,6 @@ export default function VisitModal({
     const raw = String(nameToAdd ?? companionInput).trim();
     if (!raw) return;
 
-    // Permite caso a pessoa digite mais de um separado por vírgula ou um por vez
     const names = raw
       .split(',')
       .map((n) => n.trim())
@@ -228,7 +269,6 @@ export default function VisitModal({
       return;
     }
 
-    // Se o usuário digitou um nome no campo de companhia e clicou direto em Salvar, inclui ele também!
     let finalCompanions = [...companions];
     if (companionInput.trim()) {
       const extra = companionInput
@@ -259,6 +299,7 @@ export default function VisitModal({
         cinema_location: cinemaLocation.trim(),
         companions: finalCompanions,
         company: serializeCompanions(finalCompanions),
+        is_manual_rewatch: Boolean(isManualRewatch),
         rating: Number(rating || 0),
         notes: notes.trim(),
       });
@@ -306,24 +347,39 @@ export default function VisitModal({
         <form onSubmit={handleSubmit} className="lb-modal-form">
           {errorMsg && <div className="lb-alert-error">{errorMsg}</div>}
 
-          {/* Bloco Superior: Busca do Filme + Preview do Pôster */}
+          {/* Bloco Superior: Busca do Filme + Preview do Pôster + Botão Trocar Pôster */}
           <div className="lb-movie-picker-layout">
-            <div className="lb-poster-preview-box">
-              {posterUrl ? (
-                <img
-                  src={posterUrl}
-                  alt={title || 'Pôster'}
-                  className="lb-poster-preview-img"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                />
-              ) : (
-                <div className="lb-poster-placeholder">
-                  <Film size={32} />
-                  <span>Pôster Automático</span>
-                </div>
-              )}
+            <div className="lb-poster-column">
+              <div
+                className="lb-poster-preview-box clickable"
+                onClick={handleOpenPosterGallery}
+                title="Clique para escolher outro pôster"
+              >
+                {posterUrl ? (
+                  <img
+                    src={posterUrl}
+                    alt={title || 'Pôster'}
+                    className="lb-poster-preview-img"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <div className="lb-poster-placeholder">
+                    <Film size={32} />
+                    <span>Pôster Automático</span>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                className="lb-change-poster-btn"
+                onClick={handleOpenPosterGallery}
+              >
+                <ImageIcon size={13} />
+                <span>{showPosterPicker ? 'Fechar Galeria' : 'Trocar Pôster'}</span>
+              </button>
             </div>
 
             <div className="lb-movie-fields-col">
@@ -336,7 +392,7 @@ export default function VisitModal({
                   <input
                     type="text"
                     className="lb-input lb-input-lg"
-                    placeholder="Ex: Duna: Parte 2, Ainda Estou Aqui, Oppenheimer..."
+                    placeholder="Ex: Interestelar, Duna: Parte 2, Ainda Estou Aqui..."
                     value={searchQuery}
                     onChange={(e) => {
                       setSearchQuery(e.target.value);
@@ -418,7 +474,7 @@ export default function VisitModal({
               {/* Link do Pôster */}
               <div className="lb-field-group">
                 <label className="lb-label-subtle">
-                  URL do Pôster (preenchido automaticamente na busca, ou cole um link)
+                  URL do Pôster (use "Trocar Pôster" ao lado ou cole um link customizado)
                 </label>
                 <input
                   type="url"
@@ -431,37 +487,129 @@ export default function VisitModal({
             </div>
           </div>
 
-          {/* Avisos Automáticos de Pré-estreia e Rewatch */}
-          {(autoFlagsPreview.isPreRelease || autoFlagsPreview.isRewatch) && (
+          {/* Galeria de Seleção Manual de Pôsteres (Estilo Letterboxd) */}
+          {showPosterPicker && (
+            <div className="lb-poster-picker-drawer">
+              <div className="lb-poster-picker-header">
+                <span>
+                  <ImageIcon size={14} /> Escolha o pôster oficial para exibir no seu diário
+                </span>
+                <button
+                  type="button"
+                  className="lb-poster-picker-close"
+                  onClick={() => setShowPosterPicker(false)}
+                >
+                  Fechar
+                </button>
+              </div>
+
+              {loadingPosters ? (
+                <div className="lb-poster-picker-loading">
+                  <Loader2 size={20} className="lb-spin-icon" />
+                  <span>Buscando pôsteres alternativos no TMDB...</span>
+                </div>
+              ) : availablePosters.length === 0 ? (
+                <p className="lb-helper-text">
+                  Nenhum pôster alternativo encontrado para este título. Você também pode colar
+                  qualquer URL de imagem no campo acima.
+                </p>
+              ) : (
+                <div className="lb-poster-picker-grid">
+                  {availablePosters.map((p, index) => {
+                    const isSelected = posterUrl === p.url;
+                    return (
+                      <button
+                        key={`${p.url}-${index}`}
+                        type="button"
+                        className={`lb-poster-choice-card ${isSelected ? 'selected' : ''}`}
+                        onClick={() => {
+                          setPosterUrl(p.url);
+                          setShowPosterPicker(false);
+                        }}
+                      >
+                        <img src={p.url} alt={p.label} loading="lazy" />
+                        <span>{p.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Avisos Automáticos de Pré-estreia (PRÉ), Reexibição (RE) e Rewatch */}
+          {(autoFlagsPreview.isPreRelease ||
+            autoFlagsPreview.isReexibicao ||
+            autoFlagsPreview.isAutoRewatch) && (
             <div className="lb-auto-flags-banner">
               {autoFlagsPreview.isPreRelease && (
                 <div className="lb-auto-flag-pill prerelease">
                   <Sparkles size={14} />
                   <span>
-                    <strong>Pré-estreia detectada!</strong> Sua ida (
+                    <strong>Tag PRÉ (Pré-estreia) ativada!</strong> Sua ida (
                     {visitDate.split('-').reverse().join('/')}) é anterior à estreia
                     oficial ({releaseDate.split('-').reverse().join('/')}).
                   </span>
                 </div>
               )}
-              {autoFlagsPreview.isRewatch && (
+              {autoFlagsPreview.isReexibicao && (
+                <div className="lb-auto-flag-pill reexibicao">
+                  <History size={14} />
+                  <span>
+                    <strong>Tag RE (Reexibição) ativada!</strong> A data da ida é superior a
+                    1 ano após o lançamento oficial ({releaseDate.slice(0, 4)}).
+                  </span>
+                </div>
+              )}
+              {autoFlagsPreview.isAutoRewatch && (
                 <div className="lb-auto-flag-pill rewatch">
                   <RotateCcw size={14} />
                   <span>
-                    <strong>Rewatch detectado!</strong> Você já assistiu a este filme{' '}
-                    {autoFlagsPreview.previousCount}x antes no cinema.
+                    <strong>Rewatch detectado no histórico!</strong> Você já tem{' '}
+                    {autoFlagsPreview.previousCount} ida(s) cadastrada(s) para este filme.
                   </span>
                 </div>
               )}
             </div>
           )}
 
-          {/* Avaliação Estilo Letterboxd (0.5 a 5.0 estrelas, sem coração) */}
-          <div className="lb-field-group lb-rating-section">
-            <label className="lb-label">
-              Sua Nota (Estilo Letterboxd — aceita meia estrela)
-            </label>
-            <StarRatingInput value={rating} onChange={setRating} />
+          {/* Avaliação + Opção de Reassistido (Mesmo fora do sistema) */}
+          <div className="lb-rating-and-rewatch-row">
+            <div className="lb-field-group lb-rating-section">
+              <label className="lb-label">
+                Sua Nota (Estilo Letterboxd — aceita meia estrela)
+              </label>
+              <StarRatingInput value={rating} onChange={setRating} />
+            </div>
+
+            <div className="lb-field-group lb-manual-rewatch-col">
+              <label className="lb-label">
+                <RotateCcw size={14} /> Já tinha visto antes?
+              </label>
+              <button
+                type="button"
+                className={`lb-rewatch-toggle-box ${
+                  autoFlagsPreview.isEffectiveRewatch ? 'active' : ''
+                }`}
+                onClick={() => setIsManualRewatch((prev) => !prev)}
+              >
+                <div className="lb-rewatch-icon-circle">
+                  <RotateCcw size={18} />
+                </div>
+                <div className="lb-rewatch-toggle-text">
+                  <strong>
+                    {autoFlagsPreview.isEffectiveRewatch
+                      ? 'Reassistido (Rewatch ↻)'
+                      : '1ª vez assistindo'}
+                  </strong>
+                  <span>
+                    {autoFlagsPreview.isEffectiveRewatch
+                      ? 'Você já tinha assistido a este filme antes na vida'
+                      : 'Toque aqui se já tinha visto este filme antes na vida'}
+                  </span>
+                </div>
+              </button>
+            </div>
           </div>
 
           {/* Origem do Ingresso + Formato + Áudio */}
@@ -523,11 +671,11 @@ export default function VisitModal({
             </div>
           </div>
 
-          {/* Valor Pago + Local (com Auto-completar Inteligente) */}
+          {/* Valor Pago Total (Preservado ao mudar origem) + Local */}
           <div className="lb-two-cols">
             <div className="lb-field-group">
               <label className="lb-label">
-                <DollarSign size={14} /> Valor Pago (R$)
+                <DollarSign size={14} /> Custo / Valor Gasto na Ida (R$)
               </label>
               <div className="lb-price-row">
                 <input
@@ -535,16 +683,10 @@ export default function VisitModal({
                   step="0.01"
                   min="0"
                   className="lb-input"
+                  placeholder="Ingresso, transporte, lanche..."
                   value={pricePaid}
                   onChange={(e) => setPricePaid(e.target.value)}
                 />
-                <button
-                  type="button"
-                  className={`lb-zero-btn ${Number(pricePaid) === 0 ? 'active' : ''}`}
-                  onClick={() => setPricePaid('0')}
-                >
-                  R$ 0 (Grátis)
-                </button>
               </div>
             </div>
 
@@ -593,7 +735,7 @@ export default function VisitModal({
                     setCompanionInput('');
                   }}
                 >
-                  <Check size={14} /> Sozinho
+                  <Check size={14} /> Sozinho (SOZ)
                 </button>
 
                 <input
@@ -619,11 +761,11 @@ export default function VisitModal({
                 </button>
               </div>
 
-              {/* Lista de pessoas adicionadas nesta ida */}
               <div className="lb-selected-companions">
                 {companions.length === 0 ? (
                   <span className="lb-solo-status-badge">
-                    Indo <strong>Sozinho</strong> (adicione nomes acima se foi acompanhado)
+                    Tag: <strong>SOZ (Sozinho)</strong> — adicione nomes acima para mudar para{' '}
+                    <strong>ACO (Acompanhado)</strong>
                   </span>
                 ) : (
                   companions.map((person) => (
@@ -641,7 +783,6 @@ export default function VisitModal({
                 )}
               </div>
 
-              {/* Sugestões Inteligentes de 1 toque */}
               {suggestions.companies.length > 0 && (
                 <div className="lb-quick-chips">
                   <span className="lb-chips-caption">Toque para adicionar/remover:</span>
@@ -665,7 +806,7 @@ export default function VisitModal({
             </div>
           </div>
 
-          {/* Botões de Ação (com opção de Deletar quando estiver editando) */}
+          {/* Botões de Ação */}
           <div className="lb-modal-footer lb-modal-footer-split">
             <div>
               {initialData && onDelete && (

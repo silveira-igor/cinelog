@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { getAppConfig, isSupabaseConfigured } from './config';
 
 const LOCAL_VISITS_KEY = 'cinelog_visits_v1';
+const REWATCH_TAG_TOKEN = '[REWATCH]';
 
 let supabaseInstance = null;
 let lastUrl = '';
@@ -81,8 +82,60 @@ export function serializeCompanions(companionsList) {
 }
 
 /**
- * Normaliza o título para comparação de Rewatch quando não há tmdb_id
+ * Codifica/decodifica a flag manual de "Já assisti antes na vida" usando o campo notes
+ * para manter 100% de compatibilidade com a tabela atual do Supabase sem exigir ALTER TABLE.
  */
+export function parseNotesAndManualRewatch(rawNotes, explicitManualFlag) {
+  const str = String(rawNotes || '');
+  const hasToken = str.includes(REWATCH_TAG_TOKEN);
+  const cleanNotes = str.replace(REWATCH_TAG_TOKEN, '').trim();
+  return {
+    isManualRewatch: Boolean(explicitManualFlag || hasToken),
+    cleanNotes,
+  };
+}
+
+export function encodeNotesWithManualRewatch(cleanNotes, isManualRewatch) {
+  const base = String(cleanNotes || '')
+    .replace(REWATCH_TAG_TOKEN, '')
+    .trim();
+  if (isManualRewatch) {
+    return base ? `${REWATCH_TAG_TOKEN} ${base}` : REWATCH_TAG_TOKEN;
+  }
+  return base;
+}
+
+/**
+ * Calcula se a ida foi Pré-estreia (PRÉ) ou Reexibição (RE - mais de 1 ano após o lançamento)
+ */
+export function computeReleaseTimingFlags(visitDateStr, releaseDateStr) {
+  if (!visitDateStr || !releaseDateStr) {
+    return { isPreRelease: false, isReexibicao: false };
+  }
+
+  const vStr = String(visitDateStr).slice(0, 10);
+  const rStr = String(releaseDateStr).slice(0, 10);
+
+  const isPreRelease = vStr < rStr;
+  if (isPreRelease) {
+    return { isPreRelease: true, isReexibicao: false };
+  }
+
+  const visitYear = Number(vStr.slice(0, 4));
+  const releaseYear = Number(rStr.slice(0, 4));
+  const vTime = new Date(`${vStr}T12:00:00`).getTime();
+  const rTime = new Date(`${rStr}T12:00:00`).getTime();
+  const daysAfterRelease =
+    !Number.isNaN(vTime) && !Number.isNaN(rTime)
+      ? (vTime - rTime) / (1000 * 60 * 60 * 24)
+      : 0;
+
+  // Superior a 1 ano após o lançamento oficial (tanto por diferença de anos > 1 quanto > 365 dias)
+  const isReexibicao = visitYear - releaseYear > 1 || daysAfterRelease > 365;
+
+  return { isPreRelease: false, isReexibicao };
+}
+
 function normalizeTitle(title) {
   return String(title || '')
     .toLowerCase()
@@ -92,11 +145,13 @@ function normalizeTitle(title) {
 }
 
 /**
- * Enriquecimento automático de todas as idas:
- * - isPreRelease (Pré-estreia): quando visit_date < release_date
- * - isRewatch (Rewatch ↻): quando já existe uma ida anterior para o mesmo filme
- * - watchNumber: 1ª vez, 2ª vez, 3ª vez...
+ * Enriquecimento automático e retroativo de todas as idas cadastradas:
+ * - isPreRelease (PRÉ): quando visit_date < release_date
+ * - isReexibicao (RE): quando visit_date é superior a 1 ano após o lançamento oficial
+ * - isRewatch (↻): quando já foi visto antes no sistema OU marcado manualmente como reassistido na vida
+ * - isManualRewatch: flag individual se o usuário marcou que já tinha visto antes fora do sistema
  * - companionsList: array com cada pessoa que foi junto ([] se Sozinho)
+ * - isAlone: true (SOZ) quando foi Sozinho, false (ACO) quando foi acompanhado
  */
 export function enrichVisitsWithAutoFlags(rawVisits) {
   const chronological = [...rawVisits].sort((a, b) => {
@@ -117,21 +172,32 @@ export function enrichVisitsWithAutoFlags(rawVisits) {
     const currentCount = previousCount + 1;
     seenCountByMovie.set(movieKey, currentCount);
 
-    const hasBothDates = Boolean(visit.visit_date && visit.release_date);
-    const isPreRelease =
-      hasBothDates && String(visit.visit_date) < String(visit.release_date);
+    const { isPreRelease, isReexibicao } = computeReleaseTimingFlags(
+      visit.visit_date,
+      visit.release_date
+    );
+
+    const { isManualRewatch, cleanNotes } = parseNotesAndManualRewatch(
+      visit.notes,
+      visit.is_manual_rewatch
+    );
 
     const companionsList = parseCompanions(visit.company);
+    const isAlone = companionsList.length === 0;
 
     enrichedMap.set(visit.id, {
       ...visit,
       price_paid: Number(visit.price_paid || 0),
       rating: Number(visit.rating || 0),
       companionsList,
+      isAlone,
       company: serializeCompanions(companionsList),
+      notes: cleanNotes,
+      isManualRewatch,
       isPreRelease,
-      isRewatch: previousCount > 0,
-      watchNumber: currentCount,
+      isReexibicao,
+      isRewatch: previousCount > 0 || isManualRewatch,
+      watchNumber: isManualRewatch && previousCount === 0 ? 2 : currentCount,
     });
   }
 
@@ -185,6 +251,11 @@ export async function fetchCinemaVisits() {
  * Cria uma nova ida ao cinema
  */
 export async function createCinemaVisit(visitPayload) {
+  const encodedNotes = encodeNotesWithManualRewatch(
+    visitPayload.notes,
+    visitPayload.is_manual_rewatch
+  );
+
   const cleanPayload = {
     tmdb_id: visitPayload.tmdb_id || null,
     title: String(visitPayload.title || '').trim(),
@@ -199,7 +270,7 @@ export async function createCinemaVisit(visitPayload) {
     cinema_location: String(visitPayload.cinema_location || '').trim(),
     company: serializeCompanions(visitPayload.companions ?? visitPayload.company),
     rating: Number(visitPayload.rating || 0),
-    notes: String(visitPayload.notes || '').trim(),
+    notes: encodedNotes,
   };
 
   const supabase = getSupabaseClient();
@@ -231,6 +302,11 @@ export async function createCinemaVisit(visitPayload) {
  * Atualiza uma ida existente
  */
 export async function updateCinemaVisit(id, visitPayload) {
+  const encodedNotes = encodeNotesWithManualRewatch(
+    visitPayload.notes,
+    visitPayload.is_manual_rewatch
+  );
+
   const cleanPayload = {
     tmdb_id: visitPayload.tmdb_id || null,
     title: String(visitPayload.title || '').trim(),
@@ -245,7 +321,7 @@ export async function updateCinemaVisit(id, visitPayload) {
     cinema_location: String(visitPayload.cinema_location || '').trim(),
     company: serializeCompanions(visitPayload.companions ?? visitPayload.company),
     rating: Number(visitPayload.rating || 0),
-    notes: String(visitPayload.notes || '').trim(),
+    notes: encodedNotes,
   };
 
   const supabase = getSupabaseClient();

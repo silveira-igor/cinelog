@@ -9,12 +9,15 @@ import {
   Sparkles,
   RotateCcw,
   MapPin,
+  User,
   Users,
   Edit3,
   Trash2,
   Film,
   Ticket,
   Award,
+  History,
+  DollarSign,
 } from 'lucide-react';
 import { StarDisplay } from './StarRating';
 import { parseCompanions } from '../services/storage';
@@ -111,18 +114,19 @@ export default function DataView({
     });
   }, [filteredVisits]);
 
-  // Cálculo completo das Estatísticas (contando cada companhia individualmente)
+  // Cálculo das Estatísticas baseadas em Médias (Gasto Médio por Ida, Média Mensal, etc.)
   const stats = useMemo(() => {
     const total = filteredVisits.length;
     let totalSpent = 0;
-    let freeVisitsCount = 0;
-    let paidVisitsCount = 0;
     let preReleaseCount = 0;
+    let reexibicaoCount = 0;
     let rewatchCount = 0;
     let ratedCount = 0;
     let ratingSum = 0;
 
+    const distinctMonths = new Set();
     const byOrigin = { Voucher: 0, Club: 0, Comprado: 0 };
+    const spentByOrigin = { Voucher: 0, Club: 0, Comprado: 0 };
     const byFormat = { IMAX: 0, XD: 0, '3D': 0, '2D': 0 };
     const byAudio = { Legendado: 0, Dublado: 0, Original: 0 };
     const byCinema = new Map();
@@ -132,13 +136,12 @@ export default function DataView({
       const price = Number(v.price_paid || 0);
       totalSpent += price;
 
-      if (price === 0) {
-        freeVisitsCount++;
-      } else {
-        paidVisitsCount++;
+      if (v.visit_date) {
+        distinctMonths.add(v.visit_date.slice(0, 7));
       }
 
       if (v.isPreRelease) preReleaseCount++;
+      if (v.isReexibicao) reexibicaoCount++;
       if (v.isRewatch) rewatchCount++;
 
       if (Number(v.rating) > 0) {
@@ -148,6 +151,7 @@ export default function DataView({
 
       const orig = v.ticket_origin || 'Club';
       byOrigin[orig] = (byOrigin[orig] || 0) + 1;
+      spentByOrigin[orig] = (spentByOrigin[orig] || 0) + price;
 
       const fmt = v.session_format || '2D';
       byFormat[fmt] = (byFormat[fmt] || 0) + 1;
@@ -168,11 +172,19 @@ export default function DataView({
       }
     }
 
-    const avgTicketAll = total > 0 ? totalSpent / total : 0;
-    const avgTicketPaidOnly = paidVisitsCount > 0 ? totalSpent / paidVisitsCount : 0;
+    // Cálculo de meses considerados para média mensal
+    const now = new Date();
+    let monthsDenominator = Math.max(1, distinctMonths.size);
+    if (monthFilter === 'ALL' && yearFilter === String(now.getFullYear())) {
+      monthsDenominator = now.getMonth() + 1;
+    } else if (monthFilter !== 'ALL') {
+      monthsDenominator = 1;
+    }
+
+    const avgSpentPerVisit = total > 0 ? totalSpent / total : 0;
+    const avgSpentPerMonth = total > 0 ? totalSpent / monthsDenominator : 0;
+    const avgVisitsPerMonth = total > 0 ? total / monthsDenominator : 0;
     const avgRating = ratedCount > 0 ? ratingSum / ratedCount : 0;
-    const freePercent = total > 0 ? Math.round((freeVisitsCount / total) * 100) : 0;
-    const benefitOriginCount = (byOrigin.Voucher || 0) + (byOrigin.Club || 0);
 
     const topCinemas = [...byCinema.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -185,22 +197,22 @@ export default function DataView({
     return {
       total,
       totalSpent,
-      freeVisitsCount,
-      paidVisitsCount,
-      freePercent,
-      benefitOriginCount,
-      avgTicketAll,
-      avgTicketPaidOnly,
+      avgSpentPerVisit,
+      avgSpentPerMonth,
+      avgVisitsPerMonth,
+      monthsDenominator,
       avgRating,
       preReleaseCount,
+      reexibicaoCount,
       rewatchCount,
       byOrigin,
+      spentByOrigin,
       byFormat,
       byAudio,
       topCinemas,
       topCompanies,
     };
-  }, [filteredVisits]);
+  }, [filteredVisits, yearFilter, monthFilter]);
 
   return (
     <div className="lb-dataview-container">
@@ -303,7 +315,7 @@ export default function DataView({
         </div>
       </div>
 
-      {/* Resumo rápido da filtragem */}
+      {/* Resumo rápido baseado em Médias */}
       <div className="lb-filter-summary-strip">
         <span>
           Exibindo <strong>{filteredVisits.length}</strong>{' '}
@@ -311,11 +323,11 @@ export default function DataView({
         </span>
         <span className="lb-strip-divider">•</span>
         <span>
-          Na faixa (R$ 0): <strong>{stats.freeVisitsCount}</strong>
+          Média por ida: <strong>{formatCurrencyBRL(stats.avgSpentPerVisit)}</strong>
         </span>
         <span className="lb-strip-divider">•</span>
         <span>
-          Total gasto: <strong>{formatCurrencyBRL(stats.totalSpent)}</strong>
+          Total no período: <strong>{formatCurrencyBRL(stats.totalSpent)}</strong>
         </span>
       </div>
 
@@ -346,6 +358,7 @@ export default function DataView({
                     const people = parseCompanions(
                       visit.companionsList || visit.company
                     );
+                    const fmtKey = String(visit.session_format || '2D').toLowerCase();
 
                     return (
                       <div
@@ -386,24 +399,28 @@ export default function DataView({
                             {visit.isPreRelease && (
                               <span
                                 className="lb-tag lb-tag-prerelease"
-                                title="Assistido antes da estreia oficial!"
+                                title="Pré-estreia (assistido antes do lançamento oficial)"
                               >
-                                <Sparkles size={11} /> PRÉ-ESTREIA
+                                <Sparkles size={11} /> PRÉ
+                              </span>
+                            )}
+                            {visit.isReexibicao && (
+                              <span
+                                className="lb-tag lb-tag-reexibicao"
+                                title="Reexibição (assistido mais de 1 ano após o lançamento oficial)"
+                              >
+                                <History size={11} /> RE
                               </span>
                             )}
                             {visit.isRewatch && (
                               <span
                                 className="lb-tag lb-tag-rewatch"
-                                title={`Reassistido no cinema (${visit.watchNumber}ª vez)`}
+                                title="Reassistido (Rewatch)"
                               >
                                 <RotateCcw size={11} /> REWATCH
                               </span>
                             )}
-                            <span
-                              className={`lb-tag lb-tag-format fmt-${String(
-                                visit.session_format
-                              ).toLowerCase()}`}
-                            >
+                            <span className={`lb-tag lb-tag-format brand-${fmtKey}`}>
                               {visit.session_format}
                             </span>
                             <span
@@ -416,6 +433,15 @@ export default function DataView({
                             <span className="lb-tag lb-tag-audio">
                               {visit.audio_type}
                             </span>
+                            {visit.isAlone ? (
+                              <span className="lb-tag lb-tag-soz" title="Sozinho">
+                                <User size={11} /> SOZ
+                              </span>
+                            ) : (
+                              <span className="lb-tag lb-tag-aco" title="Acompanhado">
+                                <Users size={11} /> ACO
+                              </span>
+                            )}
                           </div>
 
                           <div className="lb-diary-submeta">
@@ -442,14 +468,8 @@ export default function DataView({
 
                         <div className="lb-diary-rating-col">
                           <StarDisplay rating={visit.rating} size="md" />
-                          <span
-                            className={`lb-diary-price ${
-                              Number(visit.price_paid) === 0 ? 'free' : ''
-                            }`}
-                          >
-                            {Number(visit.price_paid) === 0
-                              ? 'Grátis (R$ 0)'
-                              : formatCurrencyBRL(visit.price_paid)}
+                          <span className="lb-diary-price">
+                            {formatCurrencyBRL(visit.price_paid)}
                           </span>
                         </div>
 
@@ -493,140 +513,157 @@ export default function DataView({
               <h3>Nenhum pôster para exibir</h3>
             </div>
           ) : (
-            filteredVisits.map((visit) => (
-              <div
-                key={visit.id}
-                className="lb-poster-card"
-                onClick={() => setSelectedVisitDetail(visit)}
-              >
-                <div className="lb-poster-frame">
-                  {visit.poster_url ? (
-                    <img
-                      src={visit.poster_url}
-                      alt={visit.title}
-                      className="lb-poster-img"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div className="lb-poster-fallback">
-                      <Film size={28} />
-                      <span>{visit.title}</span>
+            filteredVisits.map((visit) => {
+              const fmtKey = String(visit.session_format || '2D').toLowerCase();
+              return (
+                <div
+                  key={visit.id}
+                  className="lb-poster-card"
+                  onClick={() => setSelectedVisitDetail(visit)}
+                >
+                  <div className="lb-poster-frame">
+                    {visit.poster_url ? (
+                      <img
+                        src={visit.poster_url}
+                        alt={visit.title}
+                        className="lb-poster-img"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="lb-poster-fallback">
+                        <Film size={28} />
+                        <span>{visit.title}</span>
+                      </div>
+                    )}
+
+                    <div className="lb-poster-top-badges">
+                      {visit.isPreRelease && (
+                        <span className="lb-mini-badge prerelease" title="Pré-estreia">
+                          PRÉ
+                        </span>
+                      )}
+                      {visit.isReexibicao && (
+                        <span
+                          className="lb-mini-badge reexibicao"
+                          title="Reexibição (>1 ano após lançamento)"
+                        >
+                          RE
+                        </span>
+                      )}
+                      {visit.isRewatch && (
+                        <span className="lb-mini-badge rewatch" title="Rewatch">
+                          <RotateCcw size={10} />
+                        </span>
+                      )}
+                      <span className={`lb-mini-badge format brand-${fmtKey}`}>
+                        {visit.session_format}
+                      </span>
                     </div>
-                  )}
 
-                  <div className="lb-poster-top-badges">
-                    {visit.isPreRelease && (
-                      <span className="lb-mini-badge prerelease" title="Pré-estreia">
-                        PRÉ
+                    <div className="lb-poster-bottom-badges">
+                      {visit.isAlone ? (
+                        <span className="lb-mini-badge company-soz">
+                          <User size={10} strokeWidth={2.5} /> SOZ
+                        </span>
+                      ) : (
+                        <span className="lb-mini-badge company-aco">
+                          <Users size={10} strokeWidth={2.5} /> ACO
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="lb-poster-caption">
+                    <h4 className="lb-poster-title" title={visit.title}>
+                      {visit.title}
+                    </h4>
+                    <div className="lb-poster-meta-row">
+                      <StarDisplay rating={visit.rating} size="sm" />
+                      <span className="lb-poster-date-small">
+                        {formatDateBR(visit.visit_date).slice(0, 5)}
                       </span>
-                    )}
-                    {visit.isRewatch && (
-                      <span className="lb-mini-badge rewatch" title="Rewatch">
-                        ↻
-                      </span>
-                    )}
-                    <span className="lb-mini-badge format">
-                      {visit.session_format}
-                    </span>
+                    </div>
                   </div>
                 </div>
-
-                <div className="lb-poster-caption">
-                  <h4 className="lb-poster-title" title={visit.title}>
-                    {visit.title}
-                  </h4>
-                  <div className="lb-poster-meta-row">
-                    <StarDisplay rating={visit.rating} size="sm" />
-                    <span className="lb-poster-date-small">
-                      {formatDateBR(visit.visit_date).slice(0, 5)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
 
-      {/* ABA 3: ESTATÍSTICAS (STATS / GASTAR NADA X COMPRADOS) */}
+      {/* ABA 3: ESTATÍSTICAS (BASEADAS EM MÉDIAS E VISÃO COMPLETA DE CUSTOS) */}
       {activeTab === 'stats' && (
         <div className="lb-stats-dashboard">
+          {/* Card Principal: Médias de Gastos e Frequência */}
           <div className="lb-stats-hero-card">
             <div className="lb-stats-hero-header">
               <div>
-                <span className="lb-eyebrow">ECONOMIA E BENEFÍCIOS NO CINEMA</span>
-                <h3>Na Faixa (R$ 0 / Benefícios) vs. Comprados</h3>
+                <span className="lb-eyebrow">
+                  VISÃO COMPLETA DE CUSTOS (INGRESSO, DESLOCAMENTO, ALIMENTAÇÃO...)
+                </span>
+                <h3>Médias de Gastos e Frequência</h3>
               </div>
               <div className="lb-stats-free-pill">
-                {stats.freePercent}% das idas sem gastar nada
+                Média de {stats.avgVisitsPerMonth.toFixed(1).replace('.0', '')} idas / mês
               </div>
             </div>
 
             <div className="lb-stats-kpi-grid">
               <div className="lb-kpi-box green">
-                <span className="lb-kpi-label">Idas sem Gastar Nada (R$ 0)</span>
-                <strong className="lb-kpi-value">{stats.freeVisitsCount}</strong>
+                <span className="lb-kpi-label">Gasto Médio por Ida</span>
+                <strong className="lb-kpi-value">
+                  {formatCurrencyBRL(stats.avgSpentPerVisit)}
+                </strong>
                 <span className="lb-kpi-sub">
-                  Voucher + Club ({stats.benefitOriginCount} ingressos de benefício)
-                </span>
-              </div>
-
-              <div className="lb-kpi-box orange">
-                <span className="lb-kpi-label">Ingressos Comprados / Pagos</span>
-                <strong className="lb-kpi-value">{stats.paidVisitsCount}</strong>
-                <span className="lb-kpi-sub">
-                  Média de {formatCurrencyBRL(stats.avgTicketPaidOnly)} por ingresso pago
+                  Custo médio completo por sessão ({stats.total} idas)
                 </span>
               </div>
 
               <div className="lb-kpi-box blue">
-                <span className="lb-kpi-label">Total Gasto no Período</span>
+                <span className="lb-kpi-label">Média de Gasto Mensal</span>
+                <strong className="lb-kpi-value">
+                  {formatCurrencyBRL(stats.avgSpentPerMonth)}
+                </strong>
+                <span className="lb-kpi-sub">
+                  Calculado sobre {stats.monthsDenominator}{' '}
+                  {stats.monthsDenominator === 1 ? 'mês' : 'meses'} no período
+                </span>
+              </div>
+
+              <div className="lb-kpi-box orange">
+                <span className="lb-kpi-label">Gasto Total Acumulado</span>
                 <strong className="lb-kpi-value">
                   {formatCurrencyBRL(stats.totalSpent)}
                 </strong>
                 <span className="lb-kpi-sub">
-                  Custo médio geral: {formatCurrencyBRL(stats.avgTicketAll)} / ida
+                  Soma de todos os custos registrados nas idas
                 </span>
               </div>
             </div>
-
-            {stats.total > 0 && (
-              <div className="lb-comparison-bar-wrap">
-                <div className="lb-comparison-labels">
-                  <span className="free-label">
-                    ● Na Faixa (R$ 0): {stats.freeVisitsCount} ({stats.freePercent}%)
-                  </span>
-                  <span className="paid-label">
-                    ● Pagos: {stats.paidVisitsCount} ({100 - stats.freePercent}%)
-                  </span>
-                </div>
-                <div className="lb-comparison-track">
-                  <div
-                    className="lb-comparison-fill-free"
-                    style={{ width: `${stats.freePercent}%` }}
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
           <div className="lb-stats-cards-grid">
+            {/* Origem do Ingresso + Custo Médio por Modalidade */}
             <div className="lb-stat-panel">
               <h4>
-                <Ticket size={16} /> Por Origem do Ingresso
+                <Ticket size={16} /> Por Origem & Gasto Médio por Modalidade
               </h4>
               <div className="lb-bar-list">
                 {['Club', 'Voucher', 'Comprado'].map((orig) => {
                   const count = stats.byOrigin[orig] || 0;
+                  const totalOrigSpent = stats.spentByOrigin[orig] || 0;
+                  const avgOrig = count > 0 ? totalOrigSpent / count : 0;
                   const pct =
                     stats.total > 0 ? Math.round((count / stats.total) * 100) : 0;
                   return (
                     <div key={orig} className="lb-bar-item">
                       <div className="lb-bar-item-top">
-                        <span>{orig}</span>
-                        <strong>
-                          {count} ({pct}%)
-                        </strong>
+                        <span>
+                          <strong>{orig}</strong> — {count}x ({pct}%)
+                        </span>
+                        <span className="lb-bar-avg-tag">
+                          Média: {formatCurrencyBRL(avgOrig)}/ida
+                        </span>
                       </div>
                       <div className="lb-bar-bg">
                         <div
@@ -640,6 +677,7 @@ export default function DataView({
               </div>
             </div>
 
+            {/* Formato da Sala (com cores oficiais IMAX e XD) */}
             <div className="lb-stat-panel">
               <h4>
                 <Film size={16} /> Por Formato de Sala
@@ -652,7 +690,9 @@ export default function DataView({
                   return (
                     <div key={fmt} className="lb-bar-item">
                       <div className="lb-bar-item-top">
-                        <span>{fmt}</span>
+                        <span className={`lb-stat-fmt-label brand-text-${fmt.toLowerCase()}`}>
+                          {fmt}
+                        </span>
                         <strong>
                           {count} ({pct}%)
                         </strong>
@@ -669,9 +709,10 @@ export default function DataView({
               </div>
             </div>
 
+            {/* Áudio & Destaques (PRÉ, RE, Rewatch, Nota Média) */}
             <div className="lb-stat-panel">
               <h4>
-                <Award size={16} /> Áudio & Destaques
+                <Award size={16} /> Áudio & Destaques do Diário
               </h4>
               <div className="lb-bar-list">
                 {['Legendado', 'Dublado', 'Original'].map((aud) => {
@@ -694,16 +735,23 @@ export default function DataView({
                 })}
               </div>
 
-              <div className="lb-mini-highlights-row">
+              <div className="lb-mini-highlights-row lb-mini-highlights-4">
                 <div className="lb-mini-highlight">
-                  <Sparkles size={15} />
+                  <Sparkles size={14} />
                   <div>
                     <strong>{stats.preReleaseCount}</strong>
-                    <span>Pré-estreias</span>
+                    <span>Pré (PRÉ)</span>
                   </div>
                 </div>
                 <div className="lb-mini-highlight">
-                  <RotateCcw size={15} />
+                  <History size={14} />
+                  <div>
+                    <strong>{stats.reexibicaoCount}</strong>
+                    <span>Reexib. (RE)</span>
+                  </div>
+                </div>
+                <div className="lb-mini-highlight">
+                  <RotateCcw size={14} />
                   <div>
                     <strong>{stats.rewatchCount}</strong>
                     <span>Rewatches</span>
@@ -719,6 +767,7 @@ export default function DataView({
               </div>
             </div>
 
+            {/* Top Cinemas e Companhias */}
             <div className="lb-stat-panel">
               <h4>
                 <MapPin size={16} /> Top Cinemas & Companhias
@@ -791,12 +840,21 @@ export default function DataView({
                       <Sparkles size={11} /> PRÉ-ESTREIA
                     </span>
                   )}
-                  {selectedVisitDetail.isRewatch && (
-                    <span className="lb-tag lb-tag-rewatch">
-                      <RotateCcw size={11} /> REWATCH ({selectedVisitDetail.watchNumber}ª vez)
+                  {selectedVisitDetail.isReexibicao && (
+                    <span className="lb-tag lb-tag-reexibicao">
+                      <History size={11} /> RE (REEXIBIÇÃO)
                     </span>
                   )}
-                  <span className="lb-tag lb-tag-format">
+                  {selectedVisitDetail.isRewatch && (
+                    <span className="lb-tag lb-tag-rewatch">
+                      <RotateCcw size={11} /> REASSISTIDO
+                    </span>
+                  )}
+                  <span
+                    className={`lb-tag lb-tag-format brand-${String(
+                      selectedVisitDetail.session_format || '2D'
+                    ).toLowerCase()}`}
+                  >
                     {selectedVisitDetail.session_format}
                   </span>
                   <span className="lb-tag lb-tag-origin">
@@ -805,6 +863,15 @@ export default function DataView({
                   <span className="lb-tag lb-tag-audio">
                     {selectedVisitDetail.audio_type}
                   </span>
+                  {selectedVisitDetail.isAlone ? (
+                    <span className="lb-tag lb-tag-soz">
+                      <User size={11} /> SOZ
+                    </span>
+                  ) : (
+                    <span className="lb-tag lb-tag-aco">
+                      <Users size={11} /> ACO
+                    </span>
+                  )}
                 </div>
 
                 <h2>{selectedVisitDetail.title}</h2>
@@ -826,12 +893,8 @@ export default function DataView({
                     <strong>{formatDateBR(selectedVisitDetail.release_date)}</strong>
                   </div>
                   <div>
-                    <span>Valor Pago</span>
-                    <strong>
-                      {Number(selectedVisitDetail.price_paid) === 0
-                        ? 'Grátis (R$ 0,00)'
-                        : formatCurrencyBRL(selectedVisitDetail.price_paid)}
-                    </strong>
+                    <span>Custo / Valor Gasto</span>
+                    <strong>{formatCurrencyBRL(selectedVisitDetail.price_paid)}</strong>
                   </div>
                   <div>
                     <span>Cinema / Local</span>
@@ -843,7 +906,7 @@ export default function DataView({
                       {parseCompanions(
                         selectedVisitDetail.companionsList || selectedVisitDetail.company
                       ).length === 0 ? (
-                        <strong>Sozinho</strong>
+                        <strong>Sozinho (SOZ)</strong>
                       ) : (
                         parseCompanions(
                           selectedVisitDetail.companionsList || selectedVisitDetail.company
