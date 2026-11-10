@@ -1,0 +1,16 @@
+{
+  "name": "CineLog — Controle de Cinema",
+  "short_name": "CineLog",
+  "description": "Meu controle pessoal de idas ao cinema estilo Letterboxd",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#14181c",
+  "theme_color": "#14181c",
+  "icons": [
+    {
+      "src": "https://a.ltrbxd.com/logos/letterboxd-mac-icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
