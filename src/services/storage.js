@@ -8,7 +8,7 @@ import {
 } from './config';
 
 const LOCAL_VISITS_KEY = 'cinelog_visits_v1';
-const MOVIE_META_CACHE_KEY = 'cinelog_movie_meta_cache_v1';
+const MOVIE_META_CACHE_KEY = 'cinelog_movie_meta_cache_v2';
 const REWATCH_TAG_TOKEN = '[REWATCH]';
 const PROFILE_ROW_MARKER = '__CINELOG_PROFILE__';
 
@@ -47,7 +47,7 @@ function saveLocalVisitsRaw(visits) {
 }
 
 /**
- * Cache local de metadados do TMDB (runtime, genres, director) para enriquecer
+ * Cache local de metadados do TMDB (runtime, genres, director, cast, studio) para enriquecer
  * automaticamente filmes já cadastrados anteriormente no banco!
  */
 export function getMovieMetaCache() {
@@ -67,6 +67,8 @@ export function saveMovieMetaToCache(movieKey, meta) {
       runtime: Number(meta.runtime || 0),
       genres: Array.isArray(meta.genres) ? meta.genres : [],
       director: String(meta.director || ''),
+      cast: Array.isArray(meta.cast) ? meta.cast.slice(0, 3) : [],
+      studio: String(meta.studio || ''),
     };
     localStorage.setItem(MOVIE_META_CACHE_KEY, JSON.stringify(current));
   } catch {
@@ -100,7 +102,7 @@ export function getDemoVisits() {
       company: 'Ana, Lucas',
       rating: 5.0,
       notes:
-        '[REWATCH] [META:{"runtime":169,"genres":["Ficção científica","Drama","Aventura"],"director":"Christopher Nolan","seat":"Sala IMAX - Fileira G12"}] Som absurdo no IMAX, arrepio na cena da acoplagem!',
+        '[REWATCH] [META:{"runtime":169,"genres":["Ficção científica","Drama","Aventura"],"director":"Christopher Nolan","cast":["Matthew McConaughey","Anne Hathaway","Jessica Chastain"],"studio":"Warner Bros.","seat":"Sala IMAX - Fileira G12"}] Som absurdo no IMAX, arrepio na cena da acoplagem!',
       created_at: `${y}-${m}-08T21:00:00Z`,
       isDemo: true,
     },
@@ -120,7 +122,7 @@ export function getDemoVisits() {
       company: 'Sozinho',
       rating: 4.5,
       notes:
-        '[META:{"runtime":166,"genres":["Ficção científica","Aventura"],"director":"Denis Villeneuve","seat":"Sala XD 1 - Poltrona H08"}] Sessão de pré-estreia lotada.',
+        '[META:{"runtime":166,"genres":["Ficção científica","Aventura"],"director":"Denis Villeneuve","cast":["Timothée Chalamet","Zendaya","Rebecca Ferguson"],"studio":"Warner Bros.","seat":"Sala XD 1 - Poltrona H08"}] Sessão de pré-estreia lotada.',
       created_at: `${y}-${m}-03T20:00:00Z`,
       isDemo: true,
     },
@@ -140,7 +142,7 @@ export function getDemoVisits() {
       company: 'Mariana',
       rating: 5.0,
       notes:
-        '[META:{"runtime":135,"genres":["Drama","História"],"director":"Walter Salles","seat":"Sala 2 - F06"}] Atuação histórica da Fernanda Torres.',
+        '[META:{"runtime":135,"genres":["Drama","História"],"director":"Walter Salles","cast":["Fernanda Torres","Selton Mello","Fernanda Montenegro"],"studio":"Globo Filmes","seat":"Sala 2 - F06"}] Atuação histórica da Fernanda Torres.',
       created_at: `${y}-${m}-01T19:00:00Z`,
       isDemo: true,
     },
@@ -160,7 +162,7 @@ export function getDemoVisits() {
       company: 'Sozinho',
       rating: 4.5,
       notes:
-        '[REWATCH] [META:{"runtime":180,"genres":["Drama","História"],"director":"Christopher Nolan","seat":"Sala IMAX - E10"}]',
+        '[REWATCH] [META:{"runtime":180,"genres":["Drama","História"],"director":"Christopher Nolan","cast":["Cillian Murphy","Emily Blunt","Matt Damon"],"studio":"Universal","seat":"Sala IMAX - E10"}]',
       created_at: `${y}-01-15T21:00:00Z`,
       isDemo: true,
     },
@@ -169,10 +171,6 @@ export function getDemoVisits() {
   return enrichVisitsWithAutoFlags(rawDemos, '');
 }
 
-/**
- * Converte o campo company (string ou array) em uma lista de nomes individuais.
- * Retorna [] quando foi "Sozinho".
- */
 export function parseCompanions(companyValue) {
   if (!companyValue) return [];
   if (Array.isArray(companyValue)) {
@@ -225,7 +223,14 @@ export function parseNotesMetadata(rawNotes, explicitManualFlag, explicitOwner) 
   }
 
   // 2. Extrai [META:{...}]
-  let movieMeta = { runtime: 0, genres: [], director: '', seat: '' };
+  let movieMeta = {
+    runtime: 0,
+    genres: [],
+    director: '',
+    cast: [],
+    studio: '',
+    seat: '',
+  };
   const metaMatch = str.match(/\[META:(\{.*?\})\]/);
   if (metaMatch && metaMatch[1]) {
     try {
@@ -234,6 +239,8 @@ export function parseNotesMetadata(rawNotes, explicitManualFlag, explicitOwner) 
         runtime: Number(parsed.runtime || 0),
         genres: Array.isArray(parsed.genres) ? parsed.genres : [],
         director: String(parsed.director || ''),
+        cast: Array.isArray(parsed.cast) ? parsed.cast.slice(0, 3) : [],
+        studio: String(parsed.studio || ''),
         seat: String(parsed.seat || ''),
       };
     } catch {
@@ -279,12 +286,16 @@ export function encodeNotesMetadata({
     (Number(movieMeta.runtime) > 0 ||
       (movieMeta.genres && movieMeta.genres.length > 0) ||
       movieMeta.director ||
+      (movieMeta.cast && movieMeta.cast.length > 0) ||
+      movieMeta.studio ||
       movieMeta.seat)
   ) {
     const compactMeta = {
       runtime: Number(movieMeta.runtime || 0),
       genres: Array.isArray(movieMeta.genres) ? movieMeta.genres.slice(0, 3) : [],
       director: String(movieMeta.director || '').trim(),
+      cast: Array.isArray(movieMeta.cast) ? movieMeta.cast.slice(0, 3) : [],
+      studio: String(movieMeta.studio || '').trim(),
       seat: String(movieMeta.seat || '').trim(),
     };
     prefixes.push(`[META:${JSON.stringify(compactMeta)}]`);
@@ -293,9 +304,6 @@ export function encodeNotesMetadata({
   return [...prefixes, base].filter(Boolean).join(' ');
 }
 
-/**
- * Calcula se a ida foi Pré-estreia (PRÉ) ou Reexibição (RE - mais de 1 ano após o lançamento)
- */
 export function computeReleaseTimingFlags(visitDateStr, releaseDateStr) {
   if (!visitDateStr || !releaseDateStr) {
     return { isPreRelease: false, isReexibicao: false };
@@ -331,9 +339,6 @@ export function normalizeTitle(title) {
     .replace(/[^a-z0-9]/g, '');
 }
 
-/**
- * Separa as linhas de perfil (__CINELOG_PROFILE__) das linhas de idas ao cinema
- */
 function extractProfilesAndMovieRows(allRows) {
   const profilesMap = new Map();
   const movieRows = [];
@@ -392,9 +397,6 @@ function extractProfilesAndMovieRows(allRows) {
   };
 }
 
-/**
- * Enriquecimento automático e retroativo das idas de um perfil
- */
 export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = '') {
   const metaCache = getMovieMetaCache();
 
@@ -431,6 +433,11 @@ export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = ''
         ? movieMeta.genres
         : cached.genres || [];
     const director = movieMeta.director || cached.director || '';
+    const cast =
+      movieMeta.cast && movieMeta.cast.length > 0
+        ? movieMeta.cast
+        : cached.cast || [];
+    const studio = movieMeta.studio || cached.studio || '';
     const seat = movieMeta.seat || '';
 
     const effectiveOwner = ownerUsername || primaryProfileUsername;
@@ -451,6 +458,8 @@ export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = ''
       runtime,
       genres,
       director,
+      cast,
+      studio,
       isManualRewatch,
       isPreRelease,
       isReexibicao,
@@ -468,9 +477,6 @@ export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = ''
     });
 }
 
-/**
- * Busca todas as idas e preferências (meta anual e lista "Quero Ver") do @usuario
- */
 export async function fetchCinemaVisits(requestedUsername = '') {
   const targetUser = normalizeUsername(requestedUsername);
 
@@ -558,9 +564,6 @@ async function fetchAllProfilesInternal() {
   return extractProfilesAndMovieRows(allRows);
 }
 
-/**
- * Atualiza a Meta Anual ou a Watchlist ("Quero Ver no Cinema") do @usuario no Supabase
- */
 export async function updateProfilePreferences(username, { annualGoal, watchlist }) {
   const cleanUser = normalizeUsername(username);
   if (!cleanUser) return null;
@@ -602,9 +605,6 @@ export async function updateProfilePreferences(username, { annualGoal, watchlist
   return updatedMeta;
 }
 
-/**
- * Cria um novo Perfil (@usuario + PIN) direto no Supabase
- */
 export async function createUserProfile({ username, displayName, pin }) {
   const cleanUser = normalizeUsername(username);
   if (!cleanUser || cleanUser.length < 2) {
@@ -672,9 +672,6 @@ export async function createUserProfile({ username, displayName, pin }) {
   return cleanUser;
 }
 
-/**
- * Verifica o PIN de um @usuario e libera o aparelho permanentemente para aquela conta
- */
 export async function authenticateProfileWithPin(username, inputPin) {
   const cleanUser = normalizeUsername(username);
   const { profiles } = await fetchAllProfilesInternal();
@@ -695,9 +692,6 @@ export async function authenticateProfileWithPin(username, inputPin) {
   return false;
 }
 
-/**
- * Cria uma nova ida ao cinema vinculada ao @usuario ativo
- */
 export async function createCinemaVisit(visitPayload, ownerUsername) {
   const activeUser = normalizeUsername(ownerUsername);
   if (!activeUser) {
@@ -712,6 +706,8 @@ export async function createCinemaVisit(visitPayload, ownerUsername) {
       runtime: visitPayload.runtime,
       genres: visitPayload.genres,
       director: visitPayload.director,
+      cast: visitPayload.cast,
+      studio: visitPayload.studio,
       seat: visitPayload.seat,
     },
   });
@@ -758,9 +754,6 @@ export async function createCinemaVisit(visitPayload, ownerUsername) {
   return localItem;
 }
 
-/**
- * Atualiza uma ida existente preservando o @usuario dono e os metadados
- */
 export async function updateCinemaVisit(id, visitPayload, ownerUsername) {
   const activeUser = normalizeUsername(
     ownerUsername || visitPayload.ownerUsername
@@ -773,6 +766,8 @@ export async function updateCinemaVisit(id, visitPayload, ownerUsername) {
       runtime: visitPayload.runtime,
       genres: visitPayload.genres,
       director: visitPayload.director,
+      cast: visitPayload.cast,
+      studio: visitPayload.studio,
       seat: visitPayload.seat,
     },
   });
@@ -817,9 +812,6 @@ export async function updateCinemaVisit(id, visitPayload, ownerUsername) {
   return local.find((i) => i.id === id);
 }
 
-/**
- * Exclui uma ida
- */
 export async function deleteCinemaVisit(id) {
   const supabase = getSupabaseClient();
   if (supabase) {

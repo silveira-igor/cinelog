@@ -64,10 +64,12 @@ export default function VisitModal({
   const [pricePaid, setPricePaid] = useState('0');
   const [cinemaLocation, setCinemaLocation] = useState('');
 
-  // Metadados automáticos do TMDB (Duração, Gêneros, Diretor)
+  // Metadados automáticos do TMDB (Duração, Gêneros, Diretor, Elenco, Estúdio)
   const [runtime, setRuntime] = useState(0);
   const [genres, setGenres] = useState([]);
   const [director, setDirector] = useState('');
+  const [cast, setCast] = useState([]);
+  const [studio, setStudio] = useState('');
 
   // Campos opcionais de Sala/Assento e Comentário Rápido
   const [seat, setSeat] = useState('');
@@ -126,10 +128,12 @@ export default function VisitModal({
       setRuntime(Number(initialData.runtime || 0));
       setGenres(Array.isArray(initialData.genres) ? initialData.genres : []);
       setDirector(initialData.director || '');
+      setCast(Array.isArray(initialData.cast) ? initialData.cast : []);
+      setStudio(initialData.studio || '');
       setShowDropdown(false);
 
-      // Se a ida antiga ainda não tinha duração/diretor, busca automaticamente em background
-      if (!initialData.runtime && !initialData.director) {
+      // Se a ida antiga ainda não tinha duração/diretor/elenco/estúdio, busca automaticamente em background
+      if (!initialData.runtime || !initialData.director || !initialData.cast?.length || !initialData.studio) {
         fetchMovieRichDetails({
           tmdbId: initialData.tmdb_id,
           title: initialData.title,
@@ -137,6 +141,8 @@ export default function VisitModal({
           if (rich.runtime) setRuntime(rich.runtime);
           if (rich.genres?.length) setGenres(rich.genres);
           if (rich.director) setDirector(rich.director);
+          if (rich.cast?.length) setCast(rich.cast);
+          if (rich.studio) setStudio(rich.studio);
         });
       }
     } else if (prefillMovie) {
@@ -157,9 +163,11 @@ export default function VisitModal({
       setRating(0);
       setSeat('');
       setNotes('');
-      setRuntime(0);
-      setGenres([]);
-      setDirector('');
+      setRuntime(prefillMovie.runtime || 0);
+      setGenres(Array.isArray(prefillMovie.genres) ? prefillMovie.genres : []);
+      setDirector(prefillMovie.director || '');
+      setCast(Array.isArray(prefillMovie.cast) ? prefillMovie.cast : []);
+      setStudio(prefillMovie.studio || '');
       setShowDropdown(false);
 
       fetchMovieRichDetails({
@@ -169,6 +177,8 @@ export default function VisitModal({
         if (rich.runtime) setRuntime(rich.runtime);
         if (rich.genres?.length) setGenres(rich.genres);
         if (rich.director) setDirector(rich.director);
+        if (rich.cast?.length) setCast(rich.cast);
+        if (rich.studio) setStudio(rich.studio);
       });
     } else {
       setTitle('');
@@ -191,28 +201,42 @@ export default function VisitModal({
       setRuntime(0);
       setGenres([]);
       setDirector('');
+      setCast([]);
+      setStudio('');
       setSearchResults([]);
       setShowDropdown(false);
     }
   }, [isOpen, initialData, prefillMovie]);
 
-  // Debounce da busca no TMDB ao digitar
+  // Debounce da busca no TMDB ao digitar (com feedback imediato de carregamento)
   useEffect(() => {
     if (!isOpen || !showDropdown) return;
     const q = searchQuery.trim();
     if (q.length < 2) {
       setSearchResults([]);
+      setIsSearching(false);
       return;
     }
 
+    setIsSearching(true);
+    let cancelled = false;
     const timer = setTimeout(async () => {
-      setIsSearching(true);
-      const results = await searchMovies(q);
-      setSearchResults(results);
-      setIsSearching(false);
-    }, 320);
+      try {
+        const results = await searchMovies(q);
+        if (!cancelled) {
+          setSearchResults(results);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsSearching(false);
+        }
+      }
+    }, 280);
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [searchQuery, showDropdown, isOpen]);
 
   // Detecção automática em tempo real de Pré-estreia (PRÉ), Reexibição (RE) e Rewatch
@@ -252,10 +276,12 @@ export default function VisitModal({
     if (movie.runtime) setRuntime(movie.runtime);
     if (movie.genres?.length) setGenres(movie.genres);
     if (movie.director) setDirector(movie.director);
+    if (movie.cast?.length) setCast(movie.cast);
+    if (movie.studio) setStudio(movie.studio);
     setShowDropdown(false);
     setShowPosterPicker(false);
 
-    // Puxa automaticamente Duração (min), Gêneros e Diretor do TMDB
+    // Puxa automaticamente Duração (min), Gêneros, Diretor, 3 Atores e Estúdio do TMDB
     const rich = await fetchMovieRichDetails({
       tmdbId: movie.tmdbId,
       title: movie.title,
@@ -263,6 +289,8 @@ export default function VisitModal({
     if (rich.runtime) setRuntime(rich.runtime);
     if (rich.genres?.length) setGenres(rich.genres);
     if (rich.director) setDirector(rich.director);
+    if (rich.cast?.length) setCast(rich.cast);
+    if (rich.studio) setStudio(rich.studio);
   };
 
   // Preserva o Valor Pago ao trocar a origem do ingresso
@@ -357,19 +385,23 @@ export default function VisitModal({
     setIsSaving(true);
     setErrorMsg('');
     try {
-      // Se ainda não tinha runtime/director, tenta buscar rapidinho antes de salvar
+      // Se ainda não tinha runtime/director/cast/studio, tenta buscar rapidinho antes de salvar
       let finalRuntime = runtime;
       let finalGenres = genres;
       let finalDirector = director;
+      let finalCast = cast;
+      let finalStudio = studio;
 
-      if (!finalRuntime && !finalDirector) {
+      if (!finalRuntime || !finalDirector || !finalCast?.length || !finalStudio) {
         const rich = await fetchMovieRichDetails({
           tmdbId,
           title: finalTitle,
         });
-        finalRuntime = rich.runtime || 0;
-        finalGenres = rich.genres || [];
-        finalDirector = rich.director || '';
+        finalRuntime = finalRuntime || rich.runtime || 0;
+        finalGenres = finalGenres?.length ? finalGenres : rich.genres || [];
+        finalDirector = finalDirector || rich.director || '';
+        finalCast = finalCast?.length ? finalCast : rich.cast || [];
+        finalStudio = finalStudio || rich.studio || '';
       }
 
       const movieKey = tmdbId
@@ -379,6 +411,8 @@ export default function VisitModal({
         runtime: finalRuntime,
         genres: finalGenres,
         director: finalDirector,
+        cast: finalCast,
+        studio: finalStudio,
       });
 
       await onSave({
@@ -399,6 +433,8 @@ export default function VisitModal({
         runtime: finalRuntime,
         genres: finalGenres,
         director: finalDirector,
+        cast: finalCast,
+        studio: finalStudio,
         seat: seat.trim(),
         rating: Number(rating || 0),
         notes: notes.trim(),
@@ -495,9 +531,16 @@ export default function VisitModal({
                     placeholder="Ex: Interestelar, Duna: Parte 2, Ainda Estou Aqui..."
                     value={searchQuery}
                     onChange={(e) => {
-                      setSearchQuery(e.target.value);
-                      setTitle(e.target.value);
+                      const val = e.target.value;
+                      setSearchQuery(val);
+                      setTitle(val);
                       setShowDropdown(true);
+                      if (val.trim().length >= 2) {
+                        setIsSearching(true);
+                      } else {
+                        setIsSearching(false);
+                        setSearchResults([]);
+                      }
                     }}
                     onFocus={() => {
                       if (searchQuery.trim().length >= 2) setShowDropdown(true);
@@ -507,9 +550,20 @@ export default function VisitModal({
                   {isSearching && <Loader2 size={18} className="lb-spin-icon" />}
                 </div>
 
-                {/* Dropdown de resultados de filmes */}
-                {showDropdown && searchResults.length > 0 && (
+                {/* Dropdown de resultados de filmes com indicador imediato de busca */}
+                {showDropdown && (isSearching || searchResults.length > 0 || searchQuery.trim().length >= 2) && (
                   <div className="lb-search-dropdown">
+                    {isSearching && (
+                      <div className="lb-search-loading-row">
+                        <Loader2 size={15} className="lb-spin-icon" />
+                        <span>Pesquisando filmes no TMDB para "{searchQuery.trim()}"...</span>
+                      </div>
+                    )}
+                    {!isSearching && searchResults.length === 0 && searchQuery.trim().length >= 2 && (
+                      <div className="lb-search-loading-row muted">
+                        <span>Nenhum filme encontrado no catálogo para "{searchQuery.trim()}".</span>
+                      </div>
+                    )}
                     {searchResults.map((item, idx) => (
                       <button
                         key={`${item.tmdbId || idx}-${item.title}`}
@@ -543,19 +597,21 @@ export default function VisitModal({
                 )}
               </div>
 
-              {/* Faixa automática de Duração, Diretor e Gêneros puxados do TMDB */}
-              {(runtime > 0 || director || genres.length > 0) && (
+              {/* Faixa automática de Duração, Diretor, Elenco, Estúdio e Gêneros puxados do TMDB */}
+              {(runtime > 0 || director || cast.length > 0 || studio || genres.length > 0) && (
                 <div className="lb-tmdb-auto-meta-strip">
                   {runtime > 0 && (
                     <span>
                       <Clock size={12} /> {runtime} min
                     </span>
                   )}
+                  {studio && <span>🏛️ {studio}</span>}
                   {director && (
                     <span>
-                      <Clapperboard size={12} /> {director}
+                      <Clapperboard size={12} /> Dir: {director}
                     </span>
                   )}
+                  {cast.length > 0 && <span>⭐ {cast.slice(0, 3).join(', ')}</span>}
                   {genres.length > 0 && <span>🎭 {genres.join(', ')}</span>}
                 </div>
               )}

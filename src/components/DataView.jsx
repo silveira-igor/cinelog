@@ -38,6 +38,7 @@ import {
   fetchBrazilCinemaReleases,
   searchMovies,
 } from '../services/tmdb';
+import { generatePageAiInsight } from '../services/aiInsights';
 
 const MONTH_NAMES = [
   'Janeiro',
@@ -132,31 +133,47 @@ export default function DataView({
   // Aba "Em Breve / Quero Ver no Cinema"
   const [upcomingSubTab, setUpcomingSubTab] = useState('watchlist'); // 'watchlist' | 'upcoming' | 'now_playing'
   const [tmdbReleases, setTmdbReleases] = useState([]);
+  const [releasesPage, setReleasesPage] = useState(1);
+  const [hasMoreReleases, setHasMoreReleases] = useState(false);
   const [loadingReleases, setLoadingReleases] = useState(false);
+  const [loadingMoreReleases, setLoadingMoreReleases] = useState(false);
   const [watchlistSearch, setWatchlistSearch] = useState('');
   const [watchlistSearchResults, setWatchlistSearchResults] = useState([]);
+  const [isSearchingWatchlist, setIsSearchingWatchlist] = useState(false);
+
+  // Modal de detalhes de filme nas 3 abas de "Em Breve"
+  const [selectedUpcomingMovie, setSelectedUpcomingMovie] = useState(null);
+  const [loadingUpcomingDetail, setLoadingUpcomingDetail] = useState(false);
 
   useEffect(() => {
     setGoalInput(String(annualGoal || 24));
   }, [annualGoal]);
 
-  // Enriquecimento automático em background dos filmes antigos que ainda não têm duração/diretor/gênero
+  // Enriquecimento automático em background dos filmes antigos que ainda não têm duração/diretor/gênero/atores/estúdio
   useEffect(() => {
     let cancelled = false;
     const missingMetaVisits = visits.filter(
-      (v) => !v.isDemo && (!v.runtime || !v.director || !v.genres?.length)
+      (v) =>
+        !v.isDemo &&
+        (!v.runtime || !v.director || !v.genres?.length || !v.cast?.length || !v.studio)
     );
     if (missingMetaVisits.length === 0) return;
 
     (async () => {
       let updatedAny = false;
-      for (const v of missingMetaVisits.slice(0, 8)) {
+      for (const v of missingMetaVisits.slice(0, 10)) {
         if (cancelled) break;
         const rich = await fetchMovieRichDetails({
           tmdbId: v.tmdb_id,
           title: v.title,
         });
-        if (rich.runtime || rich.director || rich.genres?.length) {
+        if (
+          rich.runtime ||
+          rich.director ||
+          rich.genres?.length ||
+          rich.cast?.length ||
+          rich.studio
+        ) {
           const mKey =
             v.movieKey ||
             (v.tmdb_id ? `tmdb:${v.tmdb_id}` : `title:${normalizeTitle(v.title)}`);
@@ -174,31 +191,119 @@ export default function DataView({
     };
   }, [visits.length]);
 
-  // Carrega estreias do Brasil quando abre a aba "Em Breve / Quero Ver"
+  // Carrega estreias do Brasil (página 1) quando abre a aba "Em Breve / Quero Ver"
   useEffect(() => {
     if (activeTab !== 'upcoming') return;
     if (upcomingSubTab === 'watchlist') return;
 
+    let cancelled = false;
     setLoadingReleases(true);
-    fetchBrazilCinemaReleases(upcomingSubTab)
-      .then((list) => setTmdbReleases(list))
-      .finally(() => setLoadingReleases(false));
+    setReleasesPage(1);
+    fetchBrazilCinemaReleases(upcomingSubTab, 1)
+      .then((data) => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : data?.results || [];
+        setTmdbReleases(list);
+        setHasMoreReleases(Boolean(data?.hasMore));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingReleases(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeTab, upcomingSubTab]);
 
-  // Busca rápida para adicionar qualquer filme na lista "Quero Ver"
+  const handleLoadMoreReleases = async () => {
+    if (loadingMoreReleases || !hasMoreReleases) return;
+    const nextPage = releasesPage + 1;
+    setLoadingMoreReleases(true);
+    try {
+      const data = await fetchBrazilCinemaReleases(upcomingSubTab, nextPage);
+      const moreList = Array.isArray(data) ? data : data?.results || [];
+      setTmdbReleases((prev) => {
+        const seen = new Set(prev.map((m) => m.tmdbId || m.title));
+        const merged = [...prev];
+        for (const item of moreList) {
+          const key = item.tmdbId || item.title;
+          if (!seen.has(key)) {
+            seen.add(key);
+            merged.push(item);
+          }
+        }
+        return merged;
+      });
+      setReleasesPage(nextPage);
+      setHasMoreReleases(Boolean(data?.hasMore));
+    } finally {
+      setLoadingMoreReleases(false);
+    }
+  };
+
+  const handleOpenUpcomingMovieDetail = async (movie) => {
+    setSelectedUpcomingMovie(movie);
+    setLoadingUpcomingDetail(true);
+    try {
+      const rich = await fetchMovieRichDetails({
+        tmdbId: movie.tmdbId,
+        title: movie.title,
+      });
+      setSelectedUpcomingMovie((prev) => {
+        if (!prev || (prev.tmdbId !== movie.tmdbId && prev.title !== movie.title)) {
+          return prev;
+        }
+        return {
+          ...prev,
+          runtime: rich.runtime || prev.runtime || 0,
+          genres: rich.genres?.length ? rich.genres : prev.genres || [],
+          director: rich.director || prev.director || '',
+          cast: rich.cast?.length ? rich.cast : prev.cast || [],
+          studio: rich.studio || prev.studio || '',
+          overview: rich.overview || prev.overview || '',
+          releaseDate: rich.releaseDate || prev.releaseDate || '',
+          originalTitle: rich.originalTitle || prev.originalTitle || prev.title,
+          tmdbRating: rich.tmdbRating || prev.tmdbRating || 0,
+        };
+      });
+    } finally {
+      setLoadingUpcomingDetail(false);
+    }
+  };
+
+  // Busca rápida para adicionar qualquer filme na lista "Quero Ver" (com feedback imediato)
   useEffect(() => {
     if (activeTab !== 'upcoming') return;
     const q = watchlistSearch.trim();
     if (q.length < 2) {
       setWatchlistSearchResults([]);
+      setIsSearchingWatchlist(false);
       return;
     }
+    setIsSearchingWatchlist(true);
+    let cancelled = false;
     const timer = setTimeout(async () => {
-      const res = await searchMovies(q);
-      setWatchlistSearchResults(res);
-    }, 320);
-    return () => clearTimeout(timer);
+      try {
+        const res = await searchMovies(q);
+        if (!cancelled) setWatchlistSearchResults(res);
+      } finally {
+        if (!cancelled) setIsSearchingWatchlist(false);
+      }
+    }, 280);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [watchlistSearch, activeTab]);
+
+  // Ordena "Quero Ver no Cinema" por data de lançamento (Em Cartaz na frente, depois os mais próximos)
+  const sortedWatchlist = useMemo(() => {
+    return [...watchlist].sort((a, b) => {
+      const da = a.releaseDate || '9999-12-31';
+      const db = b.releaseDate || '9999-12-31';
+      return da.localeCompare(db);
+    });
+  }, [watchlist]);
 
   const availableYears = useMemo(() => {
     const years = new Set();
@@ -278,6 +383,8 @@ export default function DataView({
     const byCompany = new Map();
     const byGenre = new Map();
     const byDirector = new Map();
+    const byActor = new Map();
+    const byStudio = new Map();
 
     // Dia da Semana (0 = Dom ... 6 = Sáb)
     const weekdayCounts = [0, 0, 0, 0, 0, 0, 0];
@@ -348,6 +455,22 @@ export default function DataView({
             byDirector.set(dir, (byDirector.get(dir) || 0) + 1);
           });
       }
+
+      if (Array.isArray(v.cast)) {
+        for (const actor of v.cast) {
+          const cleanActor = String(actor || '').trim();
+          if (cleanActor) {
+            byActor.set(cleanActor, (byActor.get(cleanActor) || 0) + 1);
+          }
+        }
+      }
+
+      if (v.studio) {
+        const cleanStudio = String(v.studio).trim();
+        if (cleanStudio) {
+          byStudio.set(cleanStudio, (byStudio.get(cleanStudio) || 0) + 1);
+        }
+      }
     }
 
     const now = new Date();
@@ -394,6 +517,14 @@ export default function DataView({
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
+    const topActors = [...byActor.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
+    const topStudios = [...byStudio.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+
     // Progresso da Meta Anual (no ano atual)
     const currentYearStr = String(now.getFullYear());
     const currentYearVisitsCount = visits.filter((v) =>
@@ -432,11 +563,23 @@ export default function DataView({
       topCompanies,
       topGenres,
       topDirectors,
+      topActors,
+      topStudios,
       currentYearVisitsCount,
       goalTarget,
       goalPct,
     };
   }, [filteredVisits, visits, yearFilter, monthFilter, annualGoal]);
+
+  const currentAiInsight = useMemo(() => {
+    return generatePageAiInsight({
+      page: activeTab,
+      visits: filteredVisits,
+      stats,
+      watchlist: sortedWatchlist,
+      annualGoal,
+    });
+  }, [activeTab, filteredVisits, stats, sortedWatchlist, annualGoal]);
 
   const handleSaveGoal = (e) => {
     e.preventDefault();
@@ -510,6 +653,20 @@ export default function DataView({
           </button>
         )}
       </div>
+
+      {/* Card de Análise de IA da Aba Atual */}
+      {currentAiInsight && (
+        <div className="lb-ai-insight-card">
+          <div className="lb-ai-insight-icon">
+            <Sparkles size={18} />
+          </div>
+          <div className="lb-ai-insight-body">
+            <span className="lb-ai-insight-badge">{currentAiInsight.badge}</span>
+            <h4>{currentAiInsight.title}</h4>
+            <p>{currentAiInsight.text}</p>
+          </div>
+        </div>
+      )}
 
       {/* Barra de Filtros (oculta apenas na aba Em Breve) */}
       {activeTab !== 'upcoming' && (
@@ -1077,12 +1234,12 @@ export default function DataView({
               </div>
             </div>
 
-            {/* Top Gêneros & Diretores no Cinema (Item 2) */}
+            {/* Top Gêneros, Atores & Estúdios no Cinema */}
             <div className="lb-stat-panel">
               <h4>
-                <Clapperboard size={16} /> Top Gêneros & Diretores (TMDB)
+                <Clapperboard size={16} /> Top Gêneros, Atores & Estúdios (TMDB)
               </h4>
-              <div className="lb-ranking-split">
+              <div className="lb-ranking-triple">
                 <div>
                   <span className="lb-ranking-subtitle">Gêneros mais vistos</span>
                   {stats.topGenres.length === 0 ? (
@@ -1100,12 +1257,28 @@ export default function DataView({
                 </div>
 
                 <div>
-                  <span className="lb-ranking-subtitle">Diretores mais vistos</span>
-                  {stats.topDirectors.length === 0 ? (
+                  <span className="lb-ranking-subtitle">Atores mais vistos</span>
+                  {stats.topActors.length === 0 ? (
                     <p className="lb-muted-small">Calculando via TMDB...</p>
                   ) : (
                     <ul className="lb-ranking-list">
-                      {stats.topDirectors.map(([name, count]) => (
+                      {stats.topActors.map(([name, count]) => (
+                        <li key={name}>
+                          <span>{name}</span>
+                          <strong>{count}x</strong>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <span className="lb-ranking-subtitle">Estúdios / Produtoras</span>
+                  {stats.topStudios.length === 0 ? (
+                    <p className="lb-muted-small">Calculando via TMDB...</p>
+                  ) : (
+                    <ul className="lb-ranking-list">
+                      {stats.topStudios.map(([name, count]) => (
                         <li key={name}>
                           <span>{name}</span>
                           <strong>{count}x</strong>
@@ -1328,12 +1501,43 @@ export default function DataView({
                     type="text"
                     placeholder="Buscar qualquer filme para adicionar à sua lista Quero Ver..."
                     value={watchlistSearch}
-                    onChange={(e) => setWatchlistSearch(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setWatchlistSearch(val);
+                      if (val.trim().length >= 2) {
+                        setIsSearchingWatchlist(true);
+                      } else {
+                        setIsSearchingWatchlist(false);
+                        setWatchlistSearchResults([]);
+                      }
+                    }}
                   />
+                  {isSearchingWatchlist && (
+                    <Loader2 size={16} className="lb-spin-icon" />
+                  )}
                 </div>
 
-                {watchlistSearchResults.length > 0 && (
+                {(isSearchingWatchlist ||
+                  watchlistSearchResults.length > 0 ||
+                  watchlistSearch.trim().length >= 2) && (
                   <div className="lb-search-dropdown">
+                    {isSearchingWatchlist && (
+                      <div className="lb-search-loading-row">
+                        <Loader2 size={15} className="lb-spin-icon" />
+                        <span>
+                          Pesquisando filmes no TMDB para "{watchlistSearch.trim()}"...
+                        </span>
+                      </div>
+                    )}
+                    {!isSearchingWatchlist &&
+                      watchlistSearchResults.length === 0 &&
+                      watchlistSearch.trim().length >= 2 && (
+                        <div className="lb-search-loading-row muted">
+                          <span>
+                            Nenhum filme encontrado para "{watchlistSearch.trim()}".
+                          </span>
+                        </div>
+                      )}
                     {watchlistSearchResults.map((item, idx) => (
                       <button
                         key={`${item.tmdbId || idx}-${item.title}`}
@@ -1343,6 +1547,7 @@ export default function DataView({
                           if (onToggleWatchlistItem) onToggleWatchlistItem(item);
                           setWatchlistSearch('');
                           setWatchlistSearchResults([]);
+                          setIsSearchingWatchlist(false);
                         }}
                       >
                         {item.posterUrl ? (
@@ -1372,7 +1577,7 @@ export default function DataView({
           </div>
 
           {upcomingSubTab === 'watchlist' ? (
-            watchlist.length === 0 ? (
+            sortedWatchlist.length === 0 ? (
               <div className="lb-empty-state">
                 <Bookmark size={40} />
                 <h3>Sua lista "Quero Ver no Cinema" está vazia</h3>
@@ -1384,8 +1589,13 @@ export default function DataView({
               </div>
             ) : (
               <div className="lb-poster-gallery-grid">
-                {watchlist.map((movie) => (
-                  <div key={movie.tmdbId || movie.title} className="lb-poster-card">
+                {sortedWatchlist.map((movie) => (
+                  <div
+                    key={movie.tmdbId || movie.title}
+                    className="lb-poster-card"
+                    onClick={() => handleOpenUpcomingMovieDetail(movie)}
+                    title="Clique para ver estreia, diretor, atores, duração e sinopse"
+                  >
                     <div className="lb-poster-frame">
                       {movie.posterUrl ? (
                         <img
@@ -1411,7 +1621,10 @@ export default function DataView({
                         {movie.title}
                       </h4>
                       {!isReadOnlyVisitor && (
-                        <div className="lb-watchlist-card-actions">
+                        <div
+                          className="lb-watchlist-card-actions"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
                             type="button"
                             className="lb-btn-primary lb-btn-xs"
@@ -1444,63 +1657,274 @@ export default function DataView({
               <p>Buscando calendário de filmes do Brasil no TMDB...</p>
             </div>
           ) : (
-            <div className="lb-poster-gallery-grid">
-              {tmdbReleases.map((movie) => {
-                const isSaved = watchlist.some(
-                  (w) =>
-                    (w.tmdbId && w.tmdbId === movie.tmdbId) ||
-                    w.title === movie.title
-                );
-                return (
-                  <div key={movie.tmdbId || movie.title} className="lb-poster-card">
-                    <div className="lb-poster-frame">
-                      <img
-                        src={movie.posterUrl}
-                        alt={movie.title}
-                        className="lb-poster-img"
-                        loading="lazy"
-                      />
-                      <div className="lb-poster-top-badges">
-                        <span className="lb-mini-badge format">
-                          {getCountdownLabel(movie.releaseDate)}
-                        </span>
+            <>
+              <div className="lb-poster-gallery-grid">
+                {tmdbReleases.map((movie) => {
+                  const isSaved = watchlist.some(
+                    (w) =>
+                      (w.tmdbId && w.tmdbId === movie.tmdbId) ||
+                      w.title === movie.title
+                  );
+                  return (
+                    <div
+                      key={movie.tmdbId || movie.title}
+                      className="lb-poster-card"
+                      onClick={() => handleOpenUpcomingMovieDetail(movie)}
+                      title="Clique para ver estreia, diretor, atores, duração e sinopse"
+                    >
+                      <div className="lb-poster-frame">
+                        <img
+                          src={movie.posterUrl}
+                          alt={movie.title}
+                          className="lb-poster-img"
+                          loading="lazy"
+                        />
+                        <div className="lb-poster-top-badges">
+                          <span className="lb-mini-badge format">
+                            {getCountdownLabel(movie.releaseDate)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="lb-poster-caption">
+                        <h4 className="lb-poster-title" title={movie.title}>
+                          {movie.title}
+                        </h4>
+                        {!isReadOnlyVisitor && (
+                          <div
+                            className="lb-watchlist-card-actions"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              className={`lb-btn-xs ${
+                                isSaved ? 'lb-btn-secondary' : 'lb-btn-outline-green'
+                              }`}
+                              onClick={() =>
+                                onToggleWatchlistItem && onToggleWatchlistItem(movie)
+                              }
+                            >
+                              {isSaved ? '✓ Salvo' : '+ Quero Ver'}
+                            </button>
+                            <button
+                              type="button"
+                              className="lb-btn-primary lb-btn-xs"
+                              onClick={() =>
+                                onLogFromWatchlist && onLogFromWatchlist(movie)
+                              }
+                            >
+                              Registrar Ida
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
+                  );
+                })}
+              </div>
 
-                    <div className="lb-poster-caption">
-                      <h4 className="lb-poster-title" title={movie.title}>
-                        {movie.title}
-                      </h4>
-                      {!isReadOnlyVisitor && (
-                        <div className="lb-watchlist-card-actions">
-                          <button
-                            type="button"
-                            className={`lb-btn-xs ${
-                              isSaved ? 'lb-btn-secondary' : 'lb-btn-outline-green'
-                            }`}
-                            onClick={() =>
-                              onToggleWatchlistItem && onToggleWatchlistItem(movie)
-                            }
-                          >
-                            {isSaved ? '✓ Salvo' : '+ Quero Ver'}
-                          </button>
-                          <button
-                            type="button"
-                            className="lb-btn-primary lb-btn-xs"
-                            onClick={() =>
-                              onLogFromWatchlist && onLogFromWatchlist(movie)
-                            }
-                          >
-                            Registrar Ida
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+              {hasMoreReleases && (
+                <div className="lb-load-more-wrap">
+                  <button
+                    type="button"
+                    className="lb-btn-secondary"
+                    onClick={handleLoadMoreReleases}
+                    disabled={loadingMoreReleases}
+                  >
+                    {loadingMoreReleases ? (
+                      <>
+                        <Loader2 size={16} className="lb-spin-icon" /> Carregando mais 20
+                        filmes...
+                      </>
+                    ) : (
+                      <>
+                        <Plus size={16} /> Carregar Mais Filmes (+20)
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </>
           )}
+        </div>
+      )}
+
+      {/* Modal de Detalhes Básicos e Ficha Técnica do Filme (Abas de Em Breve) */}
+      {selectedUpcomingMovie && (
+        <div
+          className="lb-modal-backdrop"
+          onClick={() => setSelectedUpcomingMovie(null)}
+        >
+          <div
+            className="lb-modal-card lb-detail-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="lb-detail-layout">
+              {selectedUpcomingMovie.posterUrl ? (
+                <img
+                  src={selectedUpcomingMovie.posterUrl}
+                  alt={selectedUpcomingMovie.title}
+                  className="lb-detail-poster"
+                />
+              ) : (
+                <div className="lb-detail-poster-empty">
+                  <Film size={36} />
+                </div>
+              )}
+
+              <div className="lb-detail-info">
+                <div className="lb-diary-badges-line">
+                  <span className="lb-tag lb-tag-prerelease">
+                    <CalendarIcon size={11} />{' '}
+                    {getCountdownLabel(selectedUpcomingMovie.releaseDate)}
+                  </span>
+                  {selectedUpcomingMovie.studio && (
+                    <span className="lb-tag lb-tag-origin">
+                      🏛️ {selectedUpcomingMovie.studio}
+                    </span>
+                  )}
+                  {selectedUpcomingMovie.runtime > 0 && (
+                    <span className="lb-tag lb-tag-audio">
+                      <Clock size={11} /> {selectedUpcomingMovie.runtime} min
+                    </span>
+                  )}
+                  {selectedUpcomingMovie.tmdbRating > 0 && (
+                    <span className="lb-tag lb-tag-rewatch">
+                      ★ TMDB {selectedUpcomingMovie.tmdbRating}
+                    </span>
+                  )}
+                </div>
+
+                <h2>{selectedUpcomingMovie.title}</h2>
+                {selectedUpcomingMovie.originalTitle &&
+                  selectedUpcomingMovie.originalTitle !==
+                    selectedUpcomingMovie.title && (
+                    <p
+                      className="lb-muted-small"
+                      style={{ marginTop: '-6px', marginBottom: '10px' }}
+                    >
+                      Título original: <em>{selectedUpcomingMovie.originalTitle}</em>
+                    </p>
+                  )}
+
+                {loadingUpcomingDetail && (
+                  <div
+                    className="lb-search-loading-row"
+                    style={{ marginBottom: '12px', borderRadius: '8px' }}
+                  >
+                    <Loader2 size={15} className="lb-spin-icon" />
+                    <span>
+                      Buscando diretor, elenco, duração e produtora no TMDB...
+                    </span>
+                  </div>
+                )}
+
+                <div className="lb-detail-grid">
+                  <div>
+                    <span>Dia de Estreia</span>
+                    <strong>
+                      {formatDateBR(selectedUpcomingMovie.releaseDate)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Duração</span>
+                    <strong>
+                      {selectedUpcomingMovie.runtime > 0
+                        ? `${selectedUpcomingMovie.runtime} minutos`
+                        : loadingUpcomingDetail
+                        ? 'Carregando...'
+                        : 'Não informada'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Direção</span>
+                    <strong>
+                      {selectedUpcomingMovie.director ||
+                        (loadingUpcomingDetail ? 'Carregando...' : 'Não informado')}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Estúdio / Distribuidora</span>
+                    <strong>
+                      {selectedUpcomingMovie.studio ||
+                        (loadingUpcomingDetail ? 'Carregando...' : 'Não informado')}
+                    </strong>
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <span>Atores Principais (Top 3)</span>
+                    <strong>
+                      {selectedUpcomingMovie.cast?.length > 0
+                        ? selectedUpcomingMovie.cast.slice(0, 3).join(', ')
+                        : loadingUpcomingDetail
+                        ? 'Carregando elenco...'
+                        : 'Elenco ainda não divulgado'}
+                    </strong>
+                  </div>
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <span>Gêneros</span>
+                    <strong>
+                      {selectedUpcomingMovie.genres?.length > 0
+                        ? selectedUpcomingMovie.genres.join(', ')
+                        : loadingUpcomingDetail
+                        ? 'Carregando...'
+                        : 'Não informados'}
+                    </strong>
+                  </div>
+                  {selectedUpcomingMovie.overview && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <span>Sinopse</span>
+                      <p className="lb-detail-comment-box" style={{ fontStyle: 'normal' }}>
+                        {selectedUpcomingMovie.overview}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="lb-detail-actions">
+                  <button
+                    type="button"
+                    className="lb-btn-secondary"
+                    onClick={() => setSelectedUpcomingMovie(null)}
+                  >
+                    Fechar
+                  </button>
+                  {!isReadOnlyVisitor && (
+                    <>
+                      <button
+                        type="button"
+                        className="lb-btn-outline-green"
+                        onClick={() => {
+                          if (onToggleWatchlistItem) {
+                            onToggleWatchlistItem(selectedUpcomingMovie);
+                          }
+                        }}
+                      >
+                        {watchlist.some(
+                          (w) =>
+                            (w.tmdbId &&
+                              w.tmdbId === selectedUpcomingMovie.tmdbId) ||
+                            w.title === selectedUpcomingMovie.title
+                        )
+                          ? '✓ Na Lista Quero Ver (Remover)'
+                          : '+ Adicionar ao Quero Ver'}
+                      </button>
+                      <button
+                        type="button"
+                        className="lb-btn-primary"
+                        onClick={() => {
+                          const target = selectedUpcomingMovie;
+                          setSelectedUpcomingMovie(null);
+                          if (onLogFromWatchlist) onLogFromWatchlist(target);
+                        }}
+                      >
+                        <Plus size={15} /> Já Fui! Registrar Ida
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1572,6 +1996,8 @@ export default function DataView({
 
                 {(selectedVisitDetail.runtime > 0 ||
                   selectedVisitDetail.director ||
+                  selectedVisitDetail.studio ||
+                  selectedVisitDetail.cast?.length > 0 ||
                   selectedVisitDetail.genres?.length > 0) && (
                   <div className="lb-tmdb-auto-meta-strip">
                     {selectedVisitDetail.runtime > 0 && (
@@ -1579,10 +2005,16 @@ export default function DataView({
                         <Clock size={12} /> {selectedVisitDetail.runtime} min
                       </span>
                     )}
+                    {selectedVisitDetail.studio && (
+                      <span>🏛️ {selectedVisitDetail.studio}</span>
+                    )}
                     {selectedVisitDetail.director && (
                       <span>
                         <Clapperboard size={12} /> {selectedVisitDetail.director}
                       </span>
+                    )}
+                    {selectedVisitDetail.cast?.length > 0 && (
+                      <span>⭐ {selectedVisitDetail.cast.slice(0, 3).join(', ')}</span>
                     )}
                     {selectedVisitDetail.genres?.length > 0 && (
                       <span>🎭 {selectedVisitDetail.genres.join(', ')}</span>

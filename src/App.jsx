@@ -38,6 +38,14 @@ import { StarDisplay } from './components/StarRating';
 import VisitModal from './components/VisitModal';
 import DataView from './components/DataView';
 import { ProfileAuthModal } from './components/SettingsAndPinModal';
+import { generatePageAiInsight } from './services/aiInsights';
+
+function formatShortVisitDateBR(dateStr) {
+  if (!dateStr) return '';
+  const parts = String(dateStr).slice(0, 10).split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0].slice(2)}`;
+}
 
 const MONTH_NAMES_SHORT = [
   'Jan',
@@ -206,8 +214,10 @@ export default function App() {
       currentMonthLabel: MONTH_NAMES_SHORT[currentMonth - 1],
       currentYear,
       monthCount,
+      thisMonthCount: monthCount,
       yearCount,
       monthlyAvg,
+      diffFromMonthlyAvg: diffFromAvg,
       monthComparisonText,
       monthComparisonStatus,
       daysSinceLastVisit,
@@ -216,6 +226,17 @@ export default function App() {
       goalPct,
     };
   }, [visits, annualGoal]);
+
+  const homeAiInsight = useMemo(
+    () =>
+      generatePageAiInsight({
+        page: 'home',
+        visits,
+        homeDashboard,
+        isDemoMode,
+      }),
+    [visits, homeDashboard, isDemoMode]
+  );
 
   const latestFourVisits = useMemo(() => visits.slice(0, 4), [visits]);
 
@@ -614,6 +635,20 @@ export default function App() {
               </button>
             </section>
 
+            {/* ANÁLISE DE IA NA PÁGINA INICIAL */}
+            {homeAiInsight && (
+              <section className="lb-ai-insight-card">
+                <div className="lb-ai-insight-icon">
+                  <Sparkles size={18} />
+                </div>
+                <div className="lb-ai-insight-body">
+                  <span className="lb-ai-insight-badge">{homeAiInsight.badge}</span>
+                  <h4>{homeAiInsight.title}</h4>
+                  <p>{homeAiInsight.text}</p>
+                </div>
+              </section>
+            )}
+
             {/* ÚLTIMOS 4 FILMES NO CINEMA */}
             <section className="lb-recent-section">
               <div className="lb-section-header">
@@ -730,7 +765,20 @@ export default function App() {
                             {visit.title}
                           </h3>
                           <div className="lb-poster-meta-row">
-                            <StarDisplay rating={visit.rating} size="sm" />
+                            <div className="lb-home-star-date-group">
+                              <StarDisplay rating={visit.rating} size="sm" />
+                              {visit.visit_date && (
+                                <span
+                                  className="lb-poster-date-small"
+                                  title={`Dia da ida: ${visit.visit_date
+                                    .split('-')
+                                    .reverse()
+                                    .join('/')}`}
+                                >
+                                  {formatShortVisitDateBR(visit.visit_date)}
+                                </span>
+                              )}
+                            </div>
                             {!visit.isDemo && !isReadOnlyVisitor && (
                               <button
                                 type="button"
