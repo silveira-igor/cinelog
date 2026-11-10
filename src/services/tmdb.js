@@ -332,12 +332,77 @@ export async function fetchMoviePosters({ tmdbId, title }) {
 }
 
 /**
- * Busca os filmes mais badalados Em Cartaz (now_playing) e Próximas Estreias (upcoming) pelo TMDB.
- * Usa /discover/movie ordenado por popularidade (popularity.desc) com filtro de data primária
- * de lançamento (primary_release_date) para evitar filmes antigos relançados ou títulos ultra nichados,
- * cobrindo os próximos 12 meses de estreias.
+ * Filtra filmes que têm circuito/repercussão real (blockbusters, cotados para premiações,
+ * comentados nas redes, circuito de pelo menos 2 semanas como A24/MUBI/festivais)
+ * e barra filmes ultra nichados de 1 fim de semana (ex: Día Ocho) ou relançamentos velhos (ex: Fogaréu).
  */
-export async function fetchBrazilCinemaReleases(category = 'upcoming', page = 1) {
+function isRelevantUpcomingMovie(item, todayStr) {
+  if (!item || !item.poster_path) return false;
+  const rel = item.release_date || '';
+  if (!rel || rel <= todayStr) return false;
+
+  const titleLower = String(item.title || item.original_title || '').toLowerCase();
+  if (titleLower.includes('dia ocho') || titleLower.includes('día ocho') || titleLower.includes('fogareu') || titleLower.includes('fogaréu')) {
+    return false;
+  }
+
+  const pop = Number(item.popularity || 0);
+  const votes = Number(item.vote_count || 0);
+  const lang = String(item.original_language || '').toLowerCase();
+  const hasBackdrop = Boolean(item.backdrop_path);
+  const hasOverview = Boolean(item.overview && item.overview.trim().length >= 15);
+
+  // Filmes em inglês, francês, italiano, alemão, japonês, coreano (circuito comercial + premiações/festivais como Cannes/Veneza/Oscar)
+  if (['en', 'fr', 'it', 'de', 'ja', 'ko'].includes(lang)) {
+    return pop >= 1.1 || votes >= 5;
+  }
+
+  // Filmes nacionais/lusófonos: exige divulgação mínima (sinopse + backdrop ou boa popularidade)
+  if (lang === 'pt') {
+    return (pop >= 2.2 && hasBackdrop && hasOverview) || pop >= 4.0 || votes >= 15;
+  }
+
+  // Filmes em espanhol ou outros idiomas fora do eixo principal: exige repercussão internacional real
+  // (barra filmes de 1 fim de semana como Día Ocho, mas mantém filmes falados/premiados)
+  return (pop >= 4.2 && hasBackdrop) || votes >= 25;
+}
+
+function mapTmdbReleaseItem(item) {
+  return {
+    tmdbId: item.id,
+    title: item.title || item.original_title,
+    originalTitle: item.original_title || item.title,
+    releaseDate: item.release_date || '',
+    posterUrl: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
+    overview: item.overview || '',
+    popularity: Number(item.popularity || 0),
+    tmdbRating:
+      item.vote_average && Number(item.vote_count || 0) >= 5
+        ? Number(item.vote_average).toFixed(1)
+        : '',
+  };
+}
+
+// Cache em memória do pool curado de estreias para paginação rápida
+let cachedUpcomingPool = {
+  timestamp: 0,
+  itemsByDate: [],
+  itemsByPopularity: [],
+};
+
+/**
+ * Busca os filmes Em Cartaz (now_playing) e Próximas Estreias (upcoming) pelo TMDB.
+ * Combina:
+ * 1) Calendário de estreias agendadas no Brasil (`region=BR`, mas exigindo `primary_release_date`
+ *    nos últimos 10 meses para incluir filmes de festivais/premiações como Cliff Booth, Minotaure,
+ *    I Play Rocky, You Can See Everything e barrar filmes antigos como Fogaréu de 2022).
+ * 2) Grandes lançamentos globais dos próximos 14 meses (`sort_by=popularity.desc`).
+ */
+export async function fetchBrazilCinemaReleases(
+  category = 'upcoming',
+  page = 1,
+  sortMode = 'date'
+) {
   const auth = getTmdbAuth();
   if (!auth) return { results: [], hasMore: false };
 
@@ -345,73 +410,119 @@ export async function fetchBrazilCinemaReleases(category = 'upcoming', page = 1)
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10);
 
-    let url = '';
     if (category === 'now_playing') {
-      // Filmes lançados nos últimos 75 dias até hoje, ordenados pelos mais badalados
       const past75Days = new Date(now.getTime() - 75 * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
-      url =
+      const url =
         `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
         `language=pt-BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
-        `&with_release_type=2|3&without_genres=99,10770` +
+        `&without_genres=99,10770` +
         `&primary_release_date.gte=${past75Days}&primary_release_date.lte=${todayStr}` +
         `&vote_count.gte=5&page=1`;
-    } else {
-      // Próximas estreias: de amanhã até 12 meses à frente, ordenadas pelos filmes mais falados/aguardados
+
+      const res = await fetch(url, { headers: auth.headers });
+      if (!res.ok) return { results: [], hasMore: false };
+      const data = await res.json();
+      const results = (data.results || [])
+        .filter((item) => item.poster_path)
+        .slice(0, 20)
+        .map(mapTmdbReleaseItem);
+
+      return { results, hasMore: false };
+    }
+
+    const CACHE_TTL = 5 * 60 * 1000;
+    if (
+      Date.now() - cachedUpcomingPool.timestamp > CACHE_TTL ||
+      cachedUpcomingPool.itemsByDate.length === 0
+    ) {
       const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
-      const next12Months = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
+      const tenMonthsAgo = new Date(now.getTime() - 300 * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
-      url =
-        `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
-        `language=pt-BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
-        `&with_release_type=2|3&without_genres=99,10770` +
-        `&primary_release_date.gte=${tomorrow}&primary_release_date.lte=${next12Months}` +
-        `&page=${page}`;
+      const next14Months = new Date(now.getTime() + 425 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+
+      // 1) Estreias agendadas no circuito brasileiro (inclui filmes de festivais/premiações que estreiam em breve no BR,
+      //    mas bloqueia filmes antigos antes de `tenMonthsAgo`)
+      const brPages = [1, 2, 3, 4, 5].map((p) => {
+        const url =
+          `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
+          `language=pt-BR&region=BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
+          `&with_release_type=2|3&without_genres=99,10770` +
+          `&release_date.gte=${tomorrow}&release_date.lte=${next14Months}` +
+          `&primary_release_date.gte=${tenMonthsAgo}` +
+          `&page=${p}`;
+        return fetch(url, { headers: auth.headers })
+          .then((r) => (r.ok ? r.json() : { results: [] }))
+          .catch(() => ({ results: [] }));
+      });
+
+      // 2) Filmes mais aguardados/comentados globalmente nos próximos 14 meses (mesmo que ainda sem data BR fixa)
+      const globalPages = [1, 2, 3, 4, 5].map((p) => {
+        const url =
+          `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
+          `language=pt-BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
+          `&without_genres=99,10770` +
+          `&primary_release_date.gte=${tomorrow}&primary_release_date.lte=${next14Months}` +
+          `&page=${p}`;
+        return fetch(url, { headers: auth.headers })
+          .then((r) => (r.ok ? r.json() : { results: [] }))
+          .catch(() => ({ results: [] }));
+      });
+
+      const [brResults, globalResults] = await Promise.all([
+        Promise.all(brPages),
+        Promise.all(globalPages),
+      ]);
+
+      const seenIds = new Set();
+      const curated = [];
+
+      // Prioriza os dados com data de estreia brasileira (quando disponíveis) e complementa com o calendário global
+      for (const pData of [...brResults, ...globalResults]) {
+        for (const item of pData.results || []) {
+          if (!item || seenIds.has(item.id)) continue;
+          if (!isRelevantUpcomingMovie(item, todayStr)) continue;
+          seenIds.add(item.id);
+          curated.push(mapTmdbReleaseItem(item));
+        }
+      }
+
+      const byPopularity = [...curated].sort(
+        (a, b) => (b.popularity || 0) - (a.popularity || 0)
+      );
+      const byDate = [...curated].sort((a, b) => {
+        const da = a.releaseDate || '9999-12-31';
+        const db = b.releaseDate || '9999-12-31';
+        if (da !== db) return da.localeCompare(db);
+        return (b.popularity || 0) - (a.popularity || 0);
+      });
+
+      cachedUpcomingPool = {
+        timestamp: Date.now(),
+        itemsByDate: byDate,
+        itemsByPopularity: byPopularity,
+      };
     }
 
-    const res = await fetch(url, { headers: auth.headers });
-    if (!res.ok) return { results: [], hasMore: false };
-    const data = await res.json();
+    const activePool =
+      sortMode === 'popularity'
+        ? cachedUpcomingPool.itemsByPopularity
+        : cachedUpcomingPool.itemsByDate;
 
-    const rawList = data.results || [];
-    const results = rawList
-      .filter((item) => {
-        if (!item.poster_path) return false;
-        // Filtra filmes muito obscuros/sem repercussão mínima
-        if (category === 'upcoming' && Number(item.popularity || 0) < 3.5) {
-          return false;
-        }
-        return true;
-      })
-      .map((item) => ({
-        tmdbId: item.id,
-        title: item.title || item.original_title,
-        originalTitle: item.original_title || item.title,
-        releaseDate: item.release_date || '',
-        posterUrl: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
-        overview: item.overview || '',
-        popularity: Number(item.popularity || 0),
-        tmdbRating:
-          item.vote_average && Number(item.vote_count || 0) >= 5
-            ? Number(item.vote_average).toFixed(1)
-            : '',
-      }));
-
-    const lastItemPop =
-      rawList.length > 0 ? Number(rawList[rawList.length - 1].popularity || 0) : 0;
-    const hasMore =
-      category === 'upcoming' &&
-      Number(data.page || 1) < Number(data.total_pages || 1) &&
-      Number(data.page || 1) < 10 &&
-      lastItemPop >= 3.5;
+    const PAGE_SIZE = 20;
+    const startIdx = (page - 1) * PAGE_SIZE;
+    const endIdx = page * PAGE_SIZE;
+    const pageSlice = activePool.slice(startIdx, endIdx);
 
     return {
-      results,
-      hasMore,
+      results: pageSlice,
+      hasMore: endIdx < activePool.length,
     };
   } catch (err) {
     console.warn('Erro ao buscar estreias do TMDB:', err);

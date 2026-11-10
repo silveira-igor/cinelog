@@ -198,7 +198,7 @@ export default function DataView({
     };
   }, [visits.length]);
 
-  // Carrega estreias do Brasil (página 1) quando abre a aba "Em Breve / Quero Ver"
+  // Carrega estreias do Brasil (página 1) quando abre a aba "Em Breve / Quero Ver" ou troca ordenação
   useEffect(() => {
     if (activeTab !== 'upcoming') return;
     if (upcomingSubTab === 'watchlist') return;
@@ -206,7 +206,7 @@ export default function DataView({
     let cancelled = false;
     setLoadingReleases(true);
     setReleasesPage(1);
-    fetchBrazilCinemaReleases(upcomingSubTab, 1)
+    fetchBrazilCinemaReleases(upcomingSubTab, 1, upcomingSortMode)
       .then((data) => {
         if (cancelled) return;
         const list = Array.isArray(data) ? data : data?.results || [];
@@ -220,14 +220,18 @@ export default function DataView({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, upcomingSubTab]);
+  }, [activeTab, upcomingSubTab, upcomingSortMode]);
 
   const handleLoadMoreReleases = async () => {
     if (loadingMoreReleases || !hasMoreReleases) return;
     const nextPage = releasesPage + 1;
     setLoadingMoreReleases(true);
     try {
-      const data = await fetchBrazilCinemaReleases(upcomingSubTab, nextPage);
+      const data = await fetchBrazilCinemaReleases(
+        upcomingSubTab,
+        nextPage,
+        upcomingSortMode
+      );
       const moreList = Array.isArray(data) ? data : data?.results || [];
       setTmdbReleases((prev) => {
         const seen = new Set(prev.map((m) => m.tmdbId || m.title));
