@@ -26,6 +26,7 @@ import {
   Target,
   Check,
   Loader2,
+  X,
 } from 'lucide-react';
 import { StarDisplay } from './StarRating';
 import {
@@ -1848,6 +1849,15 @@ export default function DataView({
             className="lb-modal-card lb-detail-modal"
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              type="button"
+              className="lb-modal-top-close"
+              onClick={() => setSelectedUpcomingMovie(null)}
+              aria-label="Fechar detalhes do filme"
+              title="Fechar"
+            >
+              <X size={20} />
+            </button>
             <div className="lb-detail-layout">
               {selectedUpcomingMovie.posterUrl ? (
                 <img
@@ -2027,6 +2037,15 @@ export default function DataView({
             className="lb-modal-card lb-detail-modal"
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              type="button"
+              className="lb-modal-top-close"
+              onClick={() => setSelectedVisitDetail(null)}
+              aria-label="Fechar detalhes da ida"
+              title="Fechar"
+            >
+              <X size={20} />
+            </button>
             <div className="lb-detail-layout">
               {selectedVisitDetail.poster_url ? (
                 <img

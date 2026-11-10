@@ -371,11 +371,11 @@ export default function App() {
             className="lb-brand"
             onClick={() => setCurrentScreen('home')}
           >
-            <span className="lb-dots" aria-hidden="true">
-              <span className="dot orange" />
-              <span className="dot green" />
-              <span className="dot blue" />
-            </span>
+            <img
+              src="/logo-cinelog.png"
+              alt="Logo CineLog"
+              className="lb-brand-logo-img"
+            />
             <span className="lb-brand-text">CineLog</span>
           </button>
 

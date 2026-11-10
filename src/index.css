@@ -28,12 +28,15 @@
 }
 
 html,
-body {
+body,
+#root {
   background-color: var(--lb-bg);
   color: var(--lb-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 button,
@@ -47,6 +50,8 @@ select {
    ============================================================================ */
 .lb-app-shell {
   min-height: 100vh;
+  max-width: 100%;
+  overflow-x: hidden;
   background: radial-gradient(
       circle at 50% 0%,
       rgba(64, 188, 244, 0.07) 0%,
@@ -57,9 +62,9 @@ select {
 }
 
 .lb-navbar {
-  background: rgba(20, 24, 28, 0.92);
+  background: rgba(20, 24, 28, 0.95);
   backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--lb-border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
   position: sticky;
   top: 0;
   z-index: 40;
@@ -68,10 +73,11 @@ select {
 .lb-navbar-inner {
   max-width: 960px;
   margin: 0 auto;
-  padding: 0.85rem 1.25rem;
+  padding: 0.8rem 1.25rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.5rem;
 }
 
 .lb-brand {
@@ -79,33 +85,19 @@ select {
   border: none;
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.55rem;
   cursor: pointer;
   color: var(--lb-text);
+  min-width: 0;
 }
 
-.lb-dots {
-  display: inline-flex;
-  align-items: center;
-}
-
-.lb-dots .dot {
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.lb-dots .dot.orange {
-  background: var(--lb-orange);
-}
-.lb-dots .dot.green {
-  background: var(--lb-green);
-  margin-left: -3px;
-}
-.lb-dots .dot.blue {
-  background: var(--lb-blue);
-  margin-left: -3px;
+.lb-brand-logo-img {
+  height: 32px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 6px rgba(0, 224, 84, 0.2));
 }
 
 .lb-brand-text {
@@ -584,6 +576,8 @@ select {
   display: flex;
   flex-direction: column;
   gap: 1.15rem;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .lb-dataview-topbar {
@@ -595,49 +589,67 @@ select {
 }
 
 .lb-back-btn {
-  background: var(--lb-bg-elevated);
-  border: 1px solid var(--lb-border);
-  color: var(--lb-text-secondary);
-  padding: 0.5rem 0.85rem;
-  border-radius: 7px;
+  background: var(--lb-surface);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: var(--lb-text);
+  padding: 0.55rem 0.95rem;
+  border-radius: 8px;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.84rem;
-  font-weight: 600;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  font-weight: 700;
   cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: all 0.15s ease;
 }
 
 .lb-back-btn:hover {
-  color: var(--lb-text);
-  border-color: var(--lb-text-secondary);
+  background: var(--lb-surface-hover);
+  border-color: var(--lb-blue);
+  color: #fff;
 }
 
 .lb-view-tabs {
   display: inline-flex;
-  background: var(--lb-bg-elevated);
-  border: 1px solid var(--lb-border);
-  border-radius: 8px;
-  padding: 3px;
+  background: #0f1317;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 4px;
+  gap: 4px;
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 
 .lb-tab-btn {
-  background: none;
-  border: none;
-  color: var(--lb-text-secondary);
-  padding: 0.45rem 0.9rem;
-  border-radius: 6px;
-  font-size: 0.82rem;
-  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  padding: 0.5rem 0.95rem;
+  border-radius: 7px;
+  font-size: 0.83rem;
+  font-weight: 700;
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
+  gap: 0.42rem;
   cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lb-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
 .lb-tab-btn.active {
-  background: var(--lb-surface-hover);
-  color: var(--lb-text);
+  background: rgba(0, 224, 84, 0.18);
+  border-color: var(--lb-green);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 224, 84, 0.2);
+}
+
+.lb-tab-btn.active svg {
+  color: var(--lb-green);
 }
 
 /* Filtros */
@@ -754,7 +766,7 @@ select {
 .lb-diary-rows {
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--lb-border);
+  gap: 0.65rem;
 }
 
 .lb-diary-row {
@@ -762,23 +774,38 @@ select {
   grid-template-columns: 44px 48px 1fr auto auto;
   gap: 0.85rem;
   align-items: center;
-  padding: 0.75rem 0.5rem;
-  border-bottom: 1px solid var(--lb-border);
+  padding: 0.85rem 0.9rem;
+  background: var(--lb-bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
   cursor: pointer;
-  transition: background 0.12s ease;
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.14s ease;
 }
 
 .lb-diary-row:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: #212932;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.lb-diary-day-col {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.35rem 0.15rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .lb-diary-day-number {
   font-family: var(--font-serif);
-  font-size: 1.55rem;
+  font-size: 1.45rem;
   font-weight: 700;
-  color: var(--lb-text-secondary);
+  color: var(--lb-text);
   display: block;
   text-align: center;
+  line-height: 1;
 }
 
 .lb-diary-thumb,
@@ -866,15 +893,22 @@ select {
 .lb-diary-submeta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.45rem 0.75rem;
   font-size: 0.75rem;
   color: var(--lb-text-secondary);
+  margin-top: 0.25rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.lb-diary-submeta span {
+.lb-diary-submeta > span {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  background: rgba(20, 24, 28, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 2px 7px;
+  border-radius: 6px;
 }
 
 .lb-diary-rating-col {
@@ -1756,8 +1790,35 @@ select {
 
 /* Modal de Detalhes */
 .lb-detail-modal {
+  position: relative;
   max-width: 560px;
   padding: 1.25rem;
+}
+
+.lb-modal-top-close {
+  position: sticky;
+  top: 0;
+  float: right;
+  z-index: 20;
+  margin-bottom: -18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(15, 19, 23, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  transition: all 0.15s ease;
+}
+
+.lb-modal-top-close:hover {
+  background: var(--lb-surface-hover);
+  border-color: var(--lb-danger);
+  color: var(--lb-danger);
 }
 
 .lb-detail-layout {
@@ -2102,8 +2163,10 @@ select {
 /* Gráfico de Barras Mensal (Jan - Dez) */
 .lb-monthly-chart-grid {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 0.45rem;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 0.35rem;
+  width: 100%;
+  max-width: 100%;
   height: 155px;
   align-items: end;
   padding-top: 0.5rem;
@@ -2114,6 +2177,7 @@ select {
   flex-direction: column;
   align-items: center;
   height: 100%;
+  min-width: 0;
   gap: 4px;
 }
 
@@ -2122,6 +2186,7 @@ select {
   font-weight: 800;
   color: var(--lb-green);
   min-height: 14px;
+  line-height: 1;
 }
 
 .lb-month-bar-track {
@@ -2151,18 +2216,25 @@ select {
   font-size: 0.7rem;
   font-weight: 700;
   color: var(--lb-text-secondary);
+  white-space: nowrap;
 }
 
 .lb-month-bar-spent {
-  font-size: 0.62rem;
+  font-size: 0.6rem;
   color: var(--lb-text-muted);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: clip;
 }
 
 /* Gráfico de Dia da Semana (Dom - Sáb) */
 .lb-weekday-chart {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.5rem;
+  width: 100%;
+  max-width: 100%;
   height: 135px;
   align-items: end;
   padding-top: 0.35rem;
@@ -2173,6 +2245,7 @@ select {
   flex-direction: column;
   align-items: center;
   height: 100%;
+  min-width: 0;
   gap: 4px;
 }
 
@@ -2234,9 +2307,46 @@ select {
 }
 
 .lb-upcoming-subtabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.45rem;
-  flex-wrap: wrap;
+  background: #0f1317;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  padding: 5px;
+  box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.lb-upcoming-subtabs .lb-seg-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  padding: 0.55rem 0.65rem;
+  border-radius: 7px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.lb-upcoming-subtabs .lb-seg-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.lb-upcoming-subtabs .lb-seg-btn.active {
+  background: rgba(0, 224, 84, 0.18);
+  border-color: var(--lb-green);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 224, 84, 0.2);
+}
+
+.lb-upcoming-subtabs .lb-seg-btn.active svg {
+  color: var(--lb-green);
 }
 
 .lb-upcoming-search-wrap {
@@ -2780,71 +2890,6 @@ select {
   color: var(--lb-text-secondary);
 }
 
-@media (max-width: 720px) {
-  .lb-mini-dashboard-4 {
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem 0.5rem;
-  }
-
-  .lb-mini-dashboard-4 .lb-stat-divider {
-    display: none;
-  }
-
-  .lb-four-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.85rem;
-  }
-
-  .lb-three-cols,
-  .lb-two-cols,
-  .lb-stats-kpi-grid,
-  .lb-stats-kpi-4,
-  .lb-stats-cards-grid,
-  .lb-rating-and-rewatch-row,
-  .lb-onboarding-tips-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .lb-movie-picker-layout {
-    grid-template-columns: 96px 1fr;
-  }
-
-  .lb-poster-column,
-  .lb-poster-preview-box {
-    width: 96px;
-  }
-
-  .lb-diary-row {
-    grid-template-columns: 34px 42px 1fr;
-  }
-
-  .lb-diary-rating-col,
-  .lb-diary-actions-col {
-    grid-column: 2 / -1;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .lb-detail-layout {
-    grid-template-columns: 1fr;
-    justify-items: center;
-  }
-
-  .lb-rating-quick-steps {
-    grid-template-columns: repeat(5, 1fr);
-  }
-
-  .hide-xs {
-    display: none;
-  }
-
-  .lb-ranking-triple,
-  .lb-home-actions-3 {
-    grid-template-columns: 1fr !important;
-  }
-}
-
 /* 3 Botões Principais na Home (Adicionar Ida, Visualizar Dados, Em Breve) */
 .lb-home-actions-3 {
   display: grid;
@@ -2968,4 +3013,260 @@ select {
   background: rgba(64, 188, 244, 0.16);
   border-color: var(--lb-blue);
   color: var(--lb-blue);
+}
+
+@media (max-width: 720px) {
+  .lb-navbar-inner {
+    padding: 0.7rem 0.9rem;
+  }
+
+  .lb-brand-logo-img {
+    height: 28px;
+  }
+
+  .lb-brand-text {
+    font-size: 1.18rem;
+  }
+
+  .lb-lock-badge,
+  .lb-share-profile-btn {
+    padding: 0.42rem 0.72rem;
+    font-size: 0.76rem;
+    font-weight: 700;
+  }
+
+  .lb-main-content {
+    padding: 1.1rem 0.85rem;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .lb-mini-dashboard-4 {
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem 0.5rem;
+  }
+
+  .lb-mini-dashboard-4 .lb-stat-divider {
+    display: none;
+  }
+
+  .lb-four-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.85rem;
+  }
+
+  .lb-three-cols,
+  .lb-two-cols,
+  .lb-stats-kpi-grid,
+  .lb-stats-kpi-4,
+  .lb-stats-cards-grid,
+  .lb-rating-and-rewatch-row,
+  .lb-onboarding-tips-grid,
+  .lb-ranking-triple,
+  .lb-home-actions-3 {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Barra Superior de Visualizar Dados / Em Breve otimizada para Mobile */
+  .lb-dataview-topbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .lb-dataview-topbar .lb-back-btn {
+    order: 1;
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0.6rem 0.85rem;
+    font-size: 0.84rem;
+    background: #242d37;
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+
+  .lb-dataview-topbar > .lb-btn-primary {
+    order: 2;
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.84rem;
+  }
+
+  .lb-dataview-topbar .lb-view-tabs {
+    order: 3;
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding: 5px;
+    gap: 5px;
+    background: #0d1115;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 10px;
+  }
+
+  .lb-dataview-topbar .lb-tab-btn {
+    width: 100%;
+    padding: 0.6rem 0.3rem;
+    font-size: 0.8rem;
+    justify-content: center;
+  }
+
+  .lb-dataview-topbar .lb-upcoming-page-title {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+    padding: 0.55rem 0.85rem;
+    font-size: 0.86rem;
+  }
+
+  /* Sub-abas de Em Breve super visíveis no celular */
+  .lb-upcoming-subtabs {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .lb-upcoming-subtabs .lb-seg-btn {
+    width: 100%;
+    padding: 0.62rem 0.8rem;
+    font-size: 0.84rem;
+    justify-content: flex-start;
+  }
+
+  .lb-upcoming-sort-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .lb-upcoming-sort-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .lb-sort-pill-btn {
+    justify-content: center;
+  }
+
+  /* Filtros em grade 2x2 no celular */
+  .lb-filter-selects {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem;
+  }
+
+  .lb-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Gráfico de Evolução Mensal (Jan - Dez) 100% dentro da div no iPhone 13 */
+  .lb-stat-panel {
+    padding: 0.9rem 0.65rem;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .lb-monthly-chart-grid {
+    gap: 2px;
+    height: 142px;
+    width: 100%;
+  }
+
+  .lb-month-bar-track {
+    max-width: 20px;
+    padding: 1px;
+  }
+
+  .lb-month-bar-val {
+    font-size: 0.62rem;
+  }
+
+  .lb-month-bar-label {
+    font-size: 0.55rem;
+    letter-spacing: -0.02em;
+  }
+
+  .lb-month-bar-spent {
+    font-size: 0.45rem;
+    letter-spacing: -0.04em;
+  }
+
+  /* Cards do Diário bem subdivididos e fáceis de ler no celular */
+  .lb-diary-row {
+    grid-template-columns: 36px 46px minmax(0, 1fr) auto;
+    gap: 0.6rem;
+    padding: 0.8rem;
+    align-items: start;
+  }
+
+  .lb-diary-main-col {
+    grid-column: 3 / 5;
+  }
+
+  .lb-diary-rating-col {
+    grid-column: 1 / 4;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 0.65rem;
+    padding-top: 0.5rem;
+    margin-top: 0.15rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    width: 100%;
+  }
+
+  .lb-diary-actions-col {
+    grid-column: 4 / 5;
+    justify-self: end;
+    align-self: center;
+    padding-top: 0.5rem;
+    margin-top: 0.15rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+  }
+
+  .lb-movie-picker-layout {
+    grid-template-columns: 96px 1fr;
+  }
+
+  .lb-poster-column,
+  .lb-poster-preview-box {
+    width: 96px;
+  }
+
+  .lb-detail-modal {
+    padding: 1rem;
+  }
+
+  .lb-detail-layout {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+
+  .lb-detail-info {
+    width: 100%;
+  }
+
+  .lb-detail-actions {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+
+  .lb-detail-actions > button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .lb-rating-quick-steps {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .hide-xs {
+    display: none;
+  }
 }
