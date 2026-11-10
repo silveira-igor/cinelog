@@ -1884,7 +1884,109 @@ select {
   color: var(--lb-blue);
 }
 
-/* Lista de Perfis (@usuario + PIN) */
+/* Lista de Perfis (@usuario + PIN) e Card de Boas-Vindas (Modo Demonstração) */
+.lb-demo-pill {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--lb-orange);
+  background: rgba(255, 128, 0, 0.12);
+  border: 1px solid rgba(255, 128, 0, 0.35);
+  padding: 0.32rem 0.65rem;
+  border-radius: 999px;
+}
+
+.lb-onboarding-card {
+  background: linear-gradient(135deg, #1e2630 0%, #171d24 100%);
+  border: 1px solid rgba(0, 224, 84, 0.32);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.lb-onboarding-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.lb-onboarding-top h2 {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  margin: 0.15rem 0 0.3rem;
+}
+
+.lb-onboarding-top p {
+  font-size: 0.84rem;
+  color: var(--lb-text-secondary);
+  max-width: 600px;
+  line-height: 1.45;
+}
+
+.lb-onboarding-cta {
+  white-space: nowrap;
+  padding: 0.75rem 1.2rem;
+}
+
+.lb-onboarding-tips-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.85rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--lb-border);
+}
+
+.lb-tip-item {
+  background: rgba(20, 24, 28, 0.6);
+  border: 1px solid var(--lb-border);
+  border-radius: 8px;
+  padding: 0.75rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.lb-tip-item strong {
+  font-size: 0.8rem;
+  color: var(--lb-green);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.lb-tip-item span {
+  font-size: 0.75rem;
+  color: var(--lb-text-secondary);
+  line-height: 1.4;
+}
+
+.lb-current-account-banner {
+  background: rgba(0, 224, 84, 0.08);
+  border: 1px solid rgba(0, 224, 84, 0.3);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.lb-current-account-banner span {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--lb-text-secondary);
+}
+
+.lb-current-account-banner strong {
+  font-size: 0.92rem;
+  color: var(--lb-green);
+}
+
 .lb-profile-subform {
   display: flex;
   flex-direction: column;
@@ -2323,7 +2425,8 @@ select {
   .lb-two-cols,
   .lb-stats-kpi-grid,
   .lb-stats-cards-grid,
-  .lb-rating-and-rewatch-row {
+  .lb-rating-and-rewatch-row,
+  .lb-onboarding-tips-grid {
     grid-template-columns: 1fr;
   }
 

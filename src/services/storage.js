@@ -46,6 +46,97 @@ function saveLocalVisitsRaw(visits) {
 }
 
 /**
+ * Filmes de exemplo exibidos quando um visitante abre o site pela primeira vez
+ * sem estar conectado a nenhuma conta (@usuario).
+ */
+export function getDemoVisits() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+
+  const rawDemos = [
+    {
+      id: 'demo-1',
+      tmdb_id: 157336,
+      title: 'Interestelar (Exemplo)',
+      original_title: 'Interstellar',
+      poster_url: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg',
+      release_date: '2014-11-06',
+      visit_date: `${y}-${m}-08`,
+      ticket_origin: 'Club',
+      session_format: 'IMAX',
+      audio_type: 'Legendado',
+      price_paid: 42.5,
+      cinema_location: 'Cinemark Shopping Eldorado',
+      company: 'Ana, Lucas',
+      rating: 5.0,
+      notes: '[REWATCH]',
+      created_at: `${y}-${m}-08T21:00:00Z`,
+      isDemo: true,
+    },
+    {
+      id: 'demo-2',
+      tmdb_id: 693134,
+      title: 'Duna: Parte Dois (Exemplo)',
+      original_title: 'Dune: Part Two',
+      poster_url: 'https://image.tmdb.org/t/p/w500/8b8R8l88Qje9dn9OE8PY05Nxl1X.jpg',
+      release_date: `${y}-${m}-05`,
+      visit_date: `${y}-${m}-03`,
+      ticket_origin: 'Voucher',
+      session_format: 'XD',
+      audio_type: 'Legendado',
+      price_paid: 28.0,
+      cinema_location: 'Cinemark Cidade Jardim',
+      company: 'Sozinho',
+      rating: 4.5,
+      notes: '',
+      created_at: `${y}-${m}-03T20:00:00Z`,
+      isDemo: true,
+    },
+    {
+      id: 'demo-3',
+      tmdb_id: 1000837,
+      title: 'Ainda Estou Aqui (Exemplo)',
+      original_title: 'Ainda Estou Aqui',
+      poster_url: 'https://image.tmdb.org/t/p/w500/qNLMPY3KLrYgTX2QZ5iEwwO1Rz.jpg',
+      release_date: '2024-11-07',
+      visit_date: `${y}-${m}-01`,
+      ticket_origin: 'Comprado',
+      session_format: '2D',
+      audio_type: 'Original',
+      price_paid: 55.0,
+      cinema_location: 'Espaço Itaú de Cinema',
+      company: 'Mariana',
+      rating: 5.0,
+      notes: '',
+      created_at: `${y}-${m}-01T19:00:00Z`,
+      isDemo: true,
+    },
+    {
+      id: 'demo-4',
+      tmdb_id: 872585,
+      title: 'Oppenheimer (Exemplo)',
+      original_title: 'Oppenheimer',
+      poster_url: 'https://image.tmdb.org/t/p/w500/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg',
+      release_date: '2023-07-20',
+      visit_date: `${y}-01-15`,
+      ticket_origin: 'Club',
+      session_format: 'IMAX',
+      audio_type: 'Legendado',
+      price_paid: 35.0,
+      cinema_location: 'Cinépolis JK Iguatemi',
+      company: 'Sozinho',
+      rating: 4.5,
+      notes: '[REWATCH]',
+      created_at: `${y}-01-15T21:00:00Z`,
+      isDemo: true,
+    },
+  ];
+
+  return enrichVisitsWithAutoFlags(rawDemos, '');
+}
+
+/**
  * Converte o campo company (string ou array) em uma lista de nomes individuais.
  * Retorna [] quando foi "Sozinho".
  */
@@ -87,12 +178,10 @@ export function serializeCompanions(companionsList) {
 
 /**
  * Extrai metadados embutidos no campo notes ([USER:username] e [REWATCH])
- * mantendo 100% de compatibilidade com a tabela atual do Supabase sem exigir ALTER TABLE!
  */
 export function parseNotesMetadata(rawNotes, explicitManualFlag, explicitOwner) {
   let str = String(rawNotes || '');
 
-  // 1. Extrai dono do registro [USER:xxx]
   let ownerUsername = normalizeUsername(explicitOwner || '');
   const userMatch = str.match(/\[USER:([a-z0-9_.-]+)\]/i);
   if (userMatch && userMatch[1]) {
@@ -100,7 +189,6 @@ export function parseNotesMetadata(rawNotes, explicitManualFlag, explicitOwner) 
     str = str.replace(userMatch[0], '');
   }
 
-  // 2. Extrai flag de Reassistido manual [REWATCH]
   const hasRewatchToken = str.includes(REWATCH_TAG_TOKEN);
   str = str.replace(REWATCH_TAG_TOKEN, '').trim();
 
@@ -173,7 +261,6 @@ function extractProfilesAndMovieRows(allRows) {
   const profilesMap = new Map();
   const movieRows = [];
 
-  // Ordena mais antigos primeiro para saber quem é o primeiro perfil (dono original)
   const sortedByCreation = [...allRows].sort((a, b) =>
     String(a.created_at || '').localeCompare(String(b.created_at || ''))
   );
@@ -204,7 +291,6 @@ function extractProfilesAndMovieRows(allRows) {
   const primaryProfileUsername =
     profilesMap.size > 0 ? [...profilesMap.keys()][0] : '';
 
-  // Conta quantos filmes cada perfil tem (filmes antigos sem tag pertencem ao 1º perfil)
   const countsByUser = new Map();
   for (const m of movieRows) {
     const { ownerUsername } = parseNotesMetadata(m.notes);
@@ -290,9 +376,26 @@ export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = ''
 }
 
 /**
- * Busca todas as idas e perfis do Supabase (filtrando os filmes pelo @usuario ativo)
+ * Busca todas as idas do @usuario conectado.
+ * Se não houver nenhum @usuario conectado neste dispositivo, retorna os Filmes de Exemplo (Modo Demo)
+ * sem expor a conta pessoal de ninguém!
  */
 export async function fetchCinemaVisits(requestedUsername = '') {
+  const targetUser = normalizeUsername(requestedUsername);
+
+  // Se o visitante entrou pela primeira vez e não está logado em nenhuma conta,
+  // mostra apenas os filmes de exemplo (sem carregar nem exibir a conta do dono)!
+  if (!targetUser) {
+    return {
+      visits: getDemoVisits(),
+      profiles: [],
+      activeUsername: '',
+      isDemoMode: true,
+      cloudActive: isSupabaseConfigured(),
+      cloudError: null,
+    };
+  }
+
   const supabase = getSupabaseClient();
   let allRows = [];
   let cloudActive = false;
@@ -321,14 +424,9 @@ export async function fetchCinemaVisits(requestedUsername = '') {
   const { profiles, primaryProfileUsername, movieRows } =
     extractProfilesAndMovieRows(allRows);
 
-  const targetUser = normalizeUsername(requestedUsername) || primaryProfileUsername;
-
-  // Filtra apenas os filmes que pertencem ao @usuario selecionado
-  // (Filmes antigos sem tag [USER:...] pertencem automaticamente ao 1º perfil criado)
   const userMovieRows = movieRows.filter((row) => {
     const { ownerUsername } = parseNotesMetadata(row.notes);
     const effectiveOwner = ownerUsername || primaryProfileUsername;
-    if (!targetUser) return true;
     return effectiveOwner === targetUser;
   });
 
@@ -337,16 +435,39 @@ export async function fetchCinemaVisits(requestedUsername = '') {
     profiles,
     activeUsername: targetUser,
     primaryProfileUsername,
-    untaggedMoviesCount: movieRows.filter(
-      (r) => !parseNotesMetadata(r.notes).ownerUsername
-    ).length,
+    isDemoMode: false,
     cloudActive,
     cloudError,
   };
 }
 
 /**
- * Cria um novo Perfil (@usuario + PIN) direto no Supabase sem precisar de nova tabela!
+ * Busca a lista de perfis no banco apenas para validação interna de login/cadastro
+ */
+async function fetchAllProfilesInternal() {
+  const supabase = getSupabaseClient();
+  let allRows = [];
+
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('cinema_visits')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (!error && data) {
+      allRows = data;
+      saveLocalVisitsRaw(allRows);
+    } else {
+      allRows = getLocalVisitsRaw();
+    }
+  } else {
+    allRows = getLocalVisitsRaw();
+  }
+
+  return extractProfilesAndMovieRows(allRows);
+}
+
+/**
+ * Cria um novo Perfil (@usuario + PIN) direto no Supabase
  */
 export async function createUserProfile({ username, displayName, pin }) {
   const cleanUser = normalizeUsername(username);
@@ -358,10 +479,10 @@ export async function createUserProfile({ username, displayName, pin }) {
     throw new Error('Escolha um PIN de pelo menos 3 ou 4 dígitos.');
   }
 
-  const state = await fetchCinemaVisits();
-  const exists = state.profiles.some((p) => p.username === cleanUser);
+  const { profiles } = await fetchAllProfilesInternal();
+  const exists = profiles.some((p) => p.username === cleanUser);
   if (exists) {
-    throw new Error(`O perfil @${cleanUser} já existe. Faça login com o PIN dele!`);
+    throw new Error(`O usuário @${cleanUser} já está em uso. Escolha outro ou faça login!`);
   }
 
   const profileRowPayload = {
@@ -393,7 +514,7 @@ export async function createUserProfile({ username, displayName, pin }) {
       .select()
       .single();
 
-    if (error) throw new Error(`Erro ao criar perfil no Supabase: ${error.message}`);
+    if (error) throw new Error(`Erro ao criar conta no Supabase: ${error.message}`);
 
     const local = getLocalVisitsRaw();
     saveLocalVisitsRaw([data, ...local]);
@@ -407,7 +528,6 @@ export async function createUserProfile({ username, displayName, pin }) {
     saveLocalVisitsRaw([localItem, ...local]);
   }
 
-  // Já ativa e libera este aparelho para o perfil recém-criado
   setActiveProfileUsername(cleanUser);
   markProfileUnlockedOnDevice(cleanUser);
 
@@ -419,11 +539,13 @@ export async function createUserProfile({ username, displayName, pin }) {
  */
 export async function authenticateProfileWithPin(username, inputPin) {
   const cleanUser = normalizeUsername(username);
-  const state = await fetchCinemaVisits(cleanUser);
-  const foundProfile = state.profiles.find((p) => p.username === cleanUser);
+  const { profiles } = await fetchAllProfilesInternal();
+  const foundProfile = profiles.find((p) => p.username === cleanUser);
 
   if (!foundProfile) {
-    throw new Error(`Perfil @${cleanUser} não encontrado.`);
+    throw new Error(
+      `A conta @${cleanUser} ainda não existe. Clique na aba "Criar Nova Conta" acima para criá-la!`
+    );
   }
 
   const expectedPin = String(foundProfile.pin || getAppConfig().appPin).trim();
@@ -440,6 +562,10 @@ export async function authenticateProfileWithPin(username, inputPin) {
  */
 export async function createCinemaVisit(visitPayload, ownerUsername) {
   const activeUser = normalizeUsername(ownerUsername);
+  if (!activeUser) {
+    throw new Error('Entre na sua conta (@usuario) antes de salvar um filme.');
+  }
+
   const encodedNotes = encodeNotesMetadata({
     cleanNotes: visitPayload.notes,
     isManualRewatch: visitPayload.is_manual_rewatch,
@@ -562,6 +688,7 @@ export function getSmartSuggestions(visits) {
   const companyCounts = new Map();
 
   for (const v of visits) {
+    if (v.isDemo) continue;
     const loc = String(v.cinema_location || '').trim();
     if (loc) {
       locationCounts.set(loc, (locationCounts.get(loc) || 0) + 1);

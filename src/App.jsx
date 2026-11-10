@@ -2,11 +2,6 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Plus,
   BarChart2,
-  Settings,
-  Lock,
-  Unlock,
-  Cloud,
-  HardDrive,
   Film,
   Sparkles,
   RotateCcw,
@@ -17,6 +12,9 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  UserCircle2,
+  Compass,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   fetchCinemaVisits,
@@ -33,10 +31,7 @@ import {
 import { StarDisplay } from './components/StarRating';
 import VisitModal from './components/VisitModal';
 import DataView from './components/DataView';
-import {
-  ProfileAuthModal,
-  CloudSettingsModal,
-} from './components/SettingsAndPinModal';
+import { ProfileAuthModal } from './components/SettingsAndPinModal';
 
 const MONTH_NAMES_SHORT = [
   'Jan',
@@ -56,12 +51,11 @@ const MONTH_NAMES_SHORT = [
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('home'); // 'home' | 'data'
   const [visits, setVisits] = useState([]);
-  const [profiles, setProfiles] = useState([]);
   const [activeUsername, setActiveUsername] = useState(() =>
     getActiveProfileUsername()
   );
+  const [isDemoMode, setIsDemoMode] = useState(() => !getActiveProfileUsername());
   const [loading, setLoading] = useState(true);
-  const [cloudActive, setCloudActive] = useState(false);
 
   const [deviceUnlocked, setDeviceUnlocked] = useState(() =>
     isProfileUnlockedOnDevice(getActiveProfileUsername())
@@ -74,32 +68,28 @@ export default function App() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [pendingProtectedAction, setPendingProtectedAction] = useState(null);
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
-  const loadVisits = useCallback(
-    async (overrideUser) => {
-      setLoading(true);
-      try {
-        const target =
-          overrideUser !== undefined ? overrideUser : getActiveProfileUsername();
-        const res = await fetchCinemaVisits(target);
-        setVisits(res.visits);
-        setProfiles(res.profiles);
-        setCloudActive(res.cloudActive);
+  const loadVisits = useCallback(async (overrideUser) => {
+    setLoading(true);
+    try {
+      const target =
+        overrideUser !== undefined ? overrideUser : getActiveProfileUsername();
+      const res = await fetchCinemaVisits(target);
+      setVisits(res.visits);
+      setIsDemoMode(Boolean(res.isDemoMode));
 
-        if (res.activeUsername) {
-          setActiveUsername(res.activeUsername);
-          setActiveProfileUsername(res.activeUsername);
-          setDeviceUnlocked(isProfileUnlockedOnDevice(res.activeUsername));
-        } else {
-          setDeviceUnlocked(false);
-        }
-      } finally {
-        setLoading(false);
+      if (res.activeUsername) {
+        setActiveUsername(res.activeUsername);
+        setActiveProfileUsername(res.activeUsername);
+        setDeviceUnlocked(isProfileUnlockedOnDevice(res.activeUsername));
+      } else {
+        setActiveUsername('');
+        setDeviceUnlocked(false);
       }
-    },
-    []
-  );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadVisits();
@@ -208,6 +198,14 @@ export default function App() {
   };
 
   const handleOpenEditModal = (visit) => {
+    if (visit.isDemo) {
+      setPendingProtectedAction(() => () => {
+        setEditingVisit(null);
+        setIsVisitModalOpen(true);
+      });
+      setIsProfileModalOpen(true);
+      return;
+    }
     requireUnlockedProfile(() => {
       setEditingVisit(visit);
       setIsVisitModalOpen(true);
@@ -215,6 +213,10 @@ export default function App() {
   };
 
   const handleDeleteVisit = (visit, options = {}) => {
+    if (visit.isDemo) {
+      setIsProfileModalOpen(true);
+      return;
+    }
     requireUnlockedProfile(async () => {
       if (options.skipPrompt) {
         await deleteCinemaVisit(visit.id);
@@ -249,7 +251,7 @@ export default function App() {
 
   return (
     <div className="lb-app-shell">
-      {/* Top Navbar Estilo Letterboxd */}
+      {/* Top Navbar Limpa Estilo Letterboxd (Sem botões técnicos de chaves) */}
       <header className="lb-navbar">
         <div className="lb-navbar-inner">
           <button
@@ -266,23 +268,10 @@ export default function App() {
           </button>
 
           <div className="lb-navbar-right">
-            <button
-              type="button"
-              className={`lb-cloud-badge ${cloudActive ? 'online' : 'local'}`}
-              onClick={() => setIsSettingsModalOpen(true)}
-              title={
-                cloudActive
-                  ? 'Conectado ao Supabase na nuvem'
-                  : 'Modo Local — Clique para conectar ao Supabase e TMDB'
-              }
-            >
-              {cloudActive ? <Cloud size={14} /> : <HardDrive size={14} />}
-              <span className="hide-xs">
-                {cloudActive ? 'Nuvem' : 'Conectar Nuvem'}
-              </span>
-            </button>
+            {isDemoMode && (
+              <span className="lb-demo-pill hide-xs">Modo Demonstração</span>
+            )}
 
-            {/* Botão de Perfil (@usuario + PIN) */}
             <button
               type="button"
               className={`lb-lock-badge ${deviceUnlocked ? 'unlocked' : 'locked'}`}
@@ -290,21 +279,16 @@ export default function App() {
                 setPendingProtectedAction(null);
                 setIsProfileModalOpen(true);
               }}
-              title="Trocar de @usuario, entrar com PIN ou criar novo perfil"
+              title={
+                activeUsername
+                  ? `Conectado como @${activeUsername} — clique para trocar ou sair`
+                  : 'Clique para entrar no seu @usuario ou criar sua conta'
+              }
             >
-              {deviceUnlocked ? <Unlock size={13} /> : <Lock size={13} />}
+              <UserCircle2 size={15} />
               <span>
-                {activeUsername ? `@${activeUsername}` : 'Criar @usuario'}
+                {activeUsername ? `@${activeUsername}` : 'Entrar / Criar Conta'}
               </span>
-            </button>
-
-            <button
-              type="button"
-              className="lb-icon-btn"
-              onClick={() => setIsSettingsModalOpen(true)}
-              title="Configurações de Nuvem (Supabase / TMDB)"
-            >
-              <Settings size={18} />
             </button>
           </div>
         </div>
@@ -312,6 +296,67 @@ export default function App() {
 
       {/* Conteúdo Principal */}
       <main className="lb-main-content">
+        {/* Banner de Boas-Vindas e Dicas (Exibido apenas para quem entra sem conta conectada) */}
+        {isDemoMode && (
+          <section className="lb-onboarding-card">
+            <div className="lb-onboarding-top">
+              <div>
+                <span className="lb-eyebrow">
+                  <Compass size={12} style={{ verticalAlign: 'middle' }} /> BEM-VINDO AO
+                  CINELOG — VITRINE DE EXEMPLO
+                </span>
+                <h2>Seu diário pessoal de idas ao cinema</h2>
+                <p>
+                  Os filmes e números abaixo são <strong>dados de exemplo</strong> para
+                  você explorar o visual. Crie sua conta gratuita em 5 segundos para
+                  começar seu próprio controle na nuvem!
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="lb-btn-primary lb-onboarding-cta"
+                onClick={() => setIsProfileModalOpen(true)}
+              >
+                <UserCircle2 size={17} /> Entrar ou Criar Meu @usuario
+              </button>
+            </div>
+
+            <div className="lb-onboarding-tips-grid">
+              <div className="lb-tip-item">
+                <strong>
+                  <CheckCircle2 size={14} /> 1. Crie seu @usuario + PIN
+                </strong>
+                <span>
+                  Sem precisar de e-mail ou configurar chaves. Digitou uma vez no seu
+                  celular ou PC, sua conta fica salva no aparelho.
+                </span>
+              </div>
+
+              <div className="lb-tip-item">
+                <strong>
+                  <CheckCircle2 size={14} /> 2. Registre suas Idas (+ Adicionar Ida)
+                </strong>
+                <span>
+                  Busque o filme pelo nome para puxar o pôster e a estreia do TMDB,
+                  escolha seu pôster favorito, formato (IMAX/XD), companhia e nota com ½
+                  estrela.
+                </span>
+              </div>
+
+              <div className="lb-tip-item">
+                <strong>
+                  <CheckCircle2 size={14} /> 3. Explore Diário e Estatísticas
+                </strong>
+                <span>
+                  Clique em <em>Visualizar Dados</em> para ver sua linha do tempo mensal,
+                  estante de pôsteres e médias de gasto por ida e modalidade!
+                </span>
+              </div>
+            </div>
+          </section>
+        )}
+
         {currentScreen === 'home' ? (
           <div className="lb-home-view">
             {/* MINI DASHBOARD NA TELA INICIAL */}
@@ -348,7 +393,9 @@ export default function App() {
                 <span className="lb-metric-label">
                   NO ANO ({homeDashboard.currentYear})
                 </span>
-                <span className="lb-metric-subcaption">Idas em {homeDashboard.currentYear}</span>
+                <span className="lb-metric-subcaption">
+                  {isDemoMode ? 'Exemplo no ano' : `Idas em ${homeDashboard.currentYear}`}
+                </span>
               </div>
 
               <div className="lb-stat-divider" />
@@ -409,7 +456,9 @@ export default function App() {
             <section className="lb-recent-section">
               <div className="lb-section-header">
                 <span className="lb-section-title">
-                  ÚLTIMAS IDAS AO CINEMA {activeUsername ? `DE @${activeUsername.toUpperCase()}` : ''}
+                  {isDemoMode
+                    ? 'ÚLTIMAS IDAS AO CINEMA (FILMES DE EXEMPLO)'
+                    : `ÚLTIMAS IDAS AO CINEMA DE @${activeUsername.toUpperCase()}`}
                 </span>
                 {visits.length > 0 && (
                   <button
@@ -431,14 +480,10 @@ export default function App() {
               ) : latestFourVisits.length === 0 ? (
                 <div className="lb-empty-home-box">
                   <Film size={36} />
-                  <h3>
-                    {activeUsername
-                      ? `O diário de @${activeUsername} está pronto`
-                      : 'Seu diário de cinema está pronto'}
-                  </h3>
+                  <h3>O diário de @{activeUsername} está pronto!</h3>
                   <p>
-                    Clique em <strong>+ Adicionar Ida</strong> acima para registrar um
-                    filme no seu perfil.
+                    Clique em <strong>+ Adicionar Ida</strong> acima para buscar seu
+                    primeiro filme pelo título e puxar o pôster oficial.
                   </p>
                 </div>
               ) : (
@@ -524,17 +569,19 @@ export default function App() {
                           </h3>
                           <div className="lb-poster-meta-row">
                             <StarDisplay rating={visit.rating} size="sm" />
-                            <button
-                              type="button"
-                              className="lb-poster-delete-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteVisit(visit);
-                              }}
-                              title="Excluir esta ida"
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                            {!visit.isDemo && (
+                              <button
+                                type="button"
+                                className="lb-poster-delete-btn"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteVisit(visit);
+                                }}
+                                title="Excluir esta ida"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </article>
@@ -624,14 +671,13 @@ export default function App() {
         </div>
       )}
 
-      {/* Modal de Perfis (@usuario + PIN) */}
+      {/* Modal de Contas (@usuario + PIN) */}
       <ProfileAuthModal
         isOpen={isProfileModalOpen}
         onClose={() => {
           setIsProfileModalOpen(false);
           setPendingProtectedAction(null);
         }}
-        profiles={profiles}
         activeUsername={activeUsername}
         onProfileChanged={async (newUsername, isUnlockedNow) => {
           setActiveUsername(newUsername);
@@ -642,18 +688,6 @@ export default function App() {
             setPendingProtectedAction(null);
           }
         }}
-      />
-
-      {/* Modal de Configurações */}
-      <CloudSettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
-        onSaved={() => loadVisits(activeUsername)}
-        activeUsername={activeUsername}
-        deviceUnlocked={deviceUnlocked}
-        onDeviceLockToggle={() =>
-          setDeviceUnlocked(isProfileUnlockedOnDevice(activeUsername))
-        }
       />
     </div>
   );
