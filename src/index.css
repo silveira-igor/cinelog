@@ -718,14 +718,37 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 0.75rem;
   background: var(--lb-surface);
   padding: 0.5rem 0.85rem;
   border-radius: 6px;
   font-size: 0.76rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--lb-text-secondary);
   margin-bottom: 0.5rem;
+  white-space: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lb-diary-month-header::-webkit-scrollbar {
+  display: none;
+}
+
+.lb-diary-month-meta-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--lb-text);
+}
+
+.lb-month-meta-dot {
+  color: var(--lb-text-muted);
+  font-weight: 400;
 }
 
 .lb-diary-rows {

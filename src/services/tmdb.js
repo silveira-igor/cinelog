@@ -331,13 +331,22 @@ export async function fetchMoviePosters({ tmdbId, title }) {
   return posters;
 }
 
+// Idiomas de mercados domésticos que praticamente não entram no circuito brasileiro de cinema
+const BLOCKED_DOMESTIC_LANGS = new Set([
+  'hi', 'ta', 'te', 'ml', 'kn', 'pa', 'bn', 'mr', 'ur', 'gu', // Índia / Sul da Ásia
+  'tl', 'id', 'ms', 'th', 'vi', 'my', 'km',                   // Sudeste Asiático local
+  'tr', 'ar', 'fa', 'he', 'el',                               // Oriente Médio / Turquia / Grécia local
+  'ru', 'uk', 'cs', 'hu', 'ro', 'bg', 'sr', 'hr', 'sk', 'sl', // Leste Europeu local
+]);
+
 /**
- * Filtra filmes relevantes das Próximas Estreias:
- * - Inclui documentários comentados (gênero 99, como You Can See Everything), filmes cotados para
- *   premiações/festivais (Cliff Booth, Minotaure, I Play Rocky) e grandes estreias.
- * - Barra apenas filmes ultra nichados sem repercussão (ex: Día Ocho) ou relançamentos velhos (ex: Fogaréu).
+ * Filtra filmes relevantes das Próximas Estreias (meio-termo calibrado):
+ * - Bloqueia filmes indianos aleatórios e mercados domésticos que não chegam ao Brasil.
+ * - Mantém documentários comentados em inglês/português/francês (ex: You Can See Everything),
+ *   cotados para premiações/festivais (ex: Cliff Booth, Minotaure, I Play Rocky) e grandes estreias.
+ * - Exige popularidade e metadados mínimos para barrar filmes internacionais muito nichados.
  */
-function isRelevantUpcomingMovie(item, todayStr, isFromGlobalTop = false) {
+function isRelevantUpcomingMovie(item, todayStr, isFromBrCalendar = false) {
   if (!item || !item.poster_path) return false;
   const rel = item.release_date || '';
   if (!rel || rel <= todayStr) return false;
@@ -352,27 +361,51 @@ function isRelevantUpcomingMovie(item, todayStr, isFromGlobalTop = false) {
     return false;
   }
 
+  const lang = String(item.original_language || '').toLowerCase();
+  if (BLOCKED_DOMESTIC_LANGS.has(lang)) {
+    return false;
+  }
+
   const pop = Number(item.popularity || 0);
   const votes = Number(item.vote_count || 0);
-  const lang = String(item.original_language || '').toLowerCase();
+  const hasBackdrop = Boolean(item.backdrop_path);
+  const hasOverview = Boolean(item.overview && item.overview.trim().length >= 15);
   const genres = Array.isArray(item.genre_ids) ? item.genre_ids : [];
   const isDocumentary = genres.includes(99);
 
-  // Se já veio do ranking global de mais populares do TMDB ou é documentário de destaque, aceita direto
-  if (isFromGlobalTop && pop >= 0.8) {
-    return true;
-  }
-  if (isDocumentary && (pop >= 0.6 || votes >= 2)) {
-    return true;
-  }
-
-  // Filmes em inglês, francês, italiano, alemão, japonês, coreano, português
-  if (['en', 'fr', 'it', 'de', 'ja', 'ko', 'pt'].includes(lang)) {
-    return pop >= 0.9 || votes >= 3;
+  // Documentários: aceita apenas se for do eixo EN/PT/FR e tiver repercussão mínima (como You Can See Everything)
+  if (isDocumentary) {
+    if (['en', 'pt', 'fr'].includes(lang)) {
+      return pop >= 1.15 || votes >= 3;
+    }
+    return pop >= 5.0 && hasBackdrop;
   }
 
-  // Outros idiomas: exige repercussão mínima para barrar filmes de 1 fim de semana sem circuito
-  return pop >= 3.0 || votes >= 15;
+  // Inglês (Hollywood, A24, Neon, UK, premiações): exige buzz real para cortar indies obscuros de VOD
+  if (lang === 'en') {
+    if (isFromBrCalendar) return pop >= 1.4 || votes >= 5;
+    return pop >= 2.5 || (pop >= 1.6 && hasBackdrop);
+  }
+
+  // Francês (Cannes / circuito de arte como Minotaure):
+  if (lang === 'fr') {
+    if (isFromBrCalendar) return pop >= 1.5 || votes >= 5;
+    return pop >= 2.3 && (hasBackdrop || votes >= 5);
+  }
+
+  // Português (Cinema nacional): exige divulgação mínima
+  if (lang === 'pt') {
+    return (pop >= 2.4 && hasBackdrop && hasOverview) || pop >= 4.2 || votes >= 15;
+  }
+
+  // Japonês e Coreano (Animes de cinema e grandes estreias coreanas): barra lançamentos locais pequenos
+  if (lang === 'ja' || lang === 'ko') {
+    if (isFromBrCalendar) return pop >= 2.5 && hasBackdrop;
+    return pop >= 4.8 && hasBackdrop;
+  }
+
+  // Espanhol, Italiano, Alemão, Nórdicos, Chinês: exige alto buzz internacional para não vir filme nichado
+  return pop >= 6.0 && hasBackdrop && (hasOverview || votes >= 20);
 }
 
 function mapTmdbReleaseItem(item) {
@@ -447,8 +480,8 @@ export async function fetchBrazilCinemaReleases(
         .toISOString()
         .slice(0, 10);
 
-      // 1) Filmes mais comentados/aguardados nos próximos 14 meses (SEM bloquear documentários 99!)
-      const globalPages = [1, 2, 3, 4, 5, 6, 7].map((p) => {
+      // 1) Filmes mais comentados/aguardados nos próximos 14 meses (5 páginas filtradas por idioma/relevância)
+      const globalPages = [1, 2, 3, 4, 5].map((p) => {
         const url =
           `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
           `language=pt-BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
@@ -482,7 +515,8 @@ export async function fetchBrazilCinemaReleases(
       const seenIds = new Set();
       const curated = [];
 
-      for (const pData of globalResults) {
+      // Processa primeiro o calendário BR (isFromBrCalendar = true) e depois complementa com o global (isFromBrCalendar = false)
+      for (const pData of brResults) {
         for (const item of pData.results || []) {
           if (!item || seenIds.has(item.id)) continue;
           if (!isRelevantUpcomingMovie(item, todayStr, true)) continue;
@@ -491,7 +525,7 @@ export async function fetchBrazilCinemaReleases(
         }
       }
 
-      for (const pData of brResults) {
+      for (const pData of globalResults) {
         for (const item of pData.results || []) {
           if (!item || seenIds.has(item.id)) continue;
           if (!isRelevantUpcomingMovie(item, todayStr, false)) continue;

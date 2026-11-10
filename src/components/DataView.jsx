@@ -119,11 +119,11 @@ export default function DataView({
   isReadOnlyVisitor = false,
 }) {
   const [activeTab, setActiveTab] = useState(
-    mode === 'upcoming' ? 'upcoming' : 'diary'
-  ); // 'diary' | 'grid' | 'stats' | 'upcoming'
+    mode === 'upcoming' ? 'upcoming' : 'grid'
+  ); // 'grid' | 'diary' | 'stats' | 'upcoming'
 
   useEffect(() => {
-    setActiveTab(mode === 'upcoming' ? 'upcoming' : 'diary');
+    setActiveTab(mode === 'upcoming' ? 'upcoming' : 'grid');
   }, [mode]);
   const [yearFilter, setYearFilter] = useState('ALL');
   const [monthFilter, setMonthFilter] = useState('ALL');
@@ -385,13 +385,53 @@ export default function DataView({
       groups.get(ym).push(v);
     }
     return [...groups.entries()].map(([ym, items]) => {
-      if (ym === 'Sem Data') return { key: ym, label: 'Sem Data', items };
+      let monthSpent = 0;
+      let monthMinutes = 0;
+      let sozCount = 0;
+      let acoCount = 0;
+      let ratedSum = 0;
+      let ratedCount = 0;
+
+      for (const item of items) {
+        monthSpent += Number(item.price_paid || 0);
+        monthMinutes += Number(item.runtime || 0);
+        if (item.isAlone) {
+          sozCount++;
+        } else {
+          acoCount++;
+        }
+        const r = Number(item.rating || 0);
+        if (r > 0) {
+          ratedSum += r;
+          ratedCount++;
+        }
+      }
+
+      const avgRating = ratedCount > 0 ? ratedSum / ratedCount : 0;
+
+      if (ym === 'Sem Data') {
+        return {
+          key: ym,
+          label: 'Sem Data',
+          items,
+          monthSpent,
+          monthMinutes,
+          sozCount,
+          acoCount,
+          avgRating,
+        };
+      }
       const [y, m] = ym.split('-');
       const monthLabel = MONTH_NAMES[Number(m) - 1] || m;
       return {
         key: ym,
         label: `${monthLabel} ${y}`,
         items,
+        monthSpent,
+        monthMinutes,
+        sozCount,
+        acoCount,
+        avgRating,
       };
     });
   }, [filteredVisits]);
@@ -644,17 +684,17 @@ export default function DataView({
           <div className="lb-view-tabs">
             <button
               type="button"
-              className={`lb-tab-btn ${activeTab === 'diary' ? 'active' : ''}`}
-              onClick={() => setActiveTab('diary')}
-            >
-              <CalendarIcon size={15} /> Diário
-            </button>
-            <button
-              type="button"
               className={`lb-tab-btn ${activeTab === 'grid' ? 'active' : ''}`}
               onClick={() => setActiveTab('grid')}
             >
               <Grid size={15} /> Galeria
+            </button>
+            <button
+              type="button"
+              className={`lb-tab-btn ${activeTab === 'diary' ? 'active' : ''}`}
+              onClick={() => setActiveTab('diary')}
+            >
+              <CalendarIcon size={15} /> Diário
             </button>
             <button
               type="button"
@@ -780,9 +820,23 @@ export default function DataView({
               <div key={group.key} className="lb-diary-month-block">
                 <div className="lb-diary-month-header">
                   <span>{group.label.toUpperCase()}</span>
-                  <span className="lb-diary-month-count">
-                    {group.items.length} {group.items.length === 1 ? 'filme' : 'filmes'}
-                  </span>
+                  <div className="lb-diary-month-meta-inline">
+                    <span>
+                      {group.items.length} {group.items.length === 1 ? 'filme' : 'filmes'}
+                    </span>
+                    <span className="lb-month-meta-dot">•</span>
+                    <span>{formatCurrencyBRL(group.monthSpent)}</span>
+                    <span className="lb-month-meta-dot">•</span>
+                    <span>{formatMinutesToHours(group.monthMinutes)}</span>
+                    <span className="lb-month-meta-dot">•</span>
+                    <span>
+                      {group.acoCount} ACO / {group.sozCount} SOZ
+                    </span>
+                    <span className="lb-month-meta-dot">•</span>
+                    <span>
+                      ★ {group.avgRating > 0 ? group.avgRating.toFixed(1) : '—'}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="lb-diary-rows">
