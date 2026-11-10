@@ -27,7 +27,8 @@ O **CineLog** é uma aplicação web progressiva (PWA) criada para registrar e a
 
 ### 1. Tela Inicial (Resumo do Mês, Meta Anual, Dias sem ir ao Cinema e Últimas 4 Idas)
 <!-- Substitua ou cole seu print abaixo -->
-![Tela Inicial do CineLog](docs/screenshots/01-home.png)
+![Tela Inicial do CineLog](<img width="1466" height="731" alt="Captura de tela 2026-11-10 174252" src="https://github.com/user-attachments/assets/b9770d61-1f76-4e24-8cd2-1ddbf2d922ee" />
+)
 *👉 Sugestão de print: Tela inicial mostrando o painel de métricas no topo, os 3 botões principais (`Adicionar Ida`, `Visualizar Dados`, `Em Breve`) e os 4 últimos filmes com as tags oficiais `IMAX`/`XD`, `PRÉ`/`RE`, `SOZ`/`ACO`, estrelas e data da ida.*
 
 ### 2. Galeria de Pôsteres & Diário Mensal Detalhado
