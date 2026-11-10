@@ -332,22 +332,61 @@ export async function fetchMoviePosters({ tmdbId, title }) {
 }
 
 /**
- * Busca filmes Em Cartaz (now_playing) e Próximas Estreias (upcoming) no Brasil pelo TMDB
- * Suporta paginação (page = 1, 2, 3...) para o botão "Carregar Mais (+20)"!
+ * Busca os filmes mais badalados Em Cartaz (now_playing) e Próximas Estreias (upcoming) pelo TMDB.
+ * Usa /discover/movie ordenado por popularidade (popularity.desc) com filtro de data primária
+ * de lançamento (primary_release_date) para evitar filmes antigos relançados ou títulos ultra nichados,
+ * cobrindo os próximos 12 meses de estreias.
  */
 export async function fetchBrazilCinemaReleases(category = 'upcoming', page = 1) {
   const auth = getTmdbAuth();
   if (!auth) return { results: [], hasMore: false };
 
   try {
-    const endpoint = category === 'now_playing' ? 'now_playing' : 'upcoming';
-    const url = `https://api.themoviedb.org/3/movie/${endpoint}?${auth.authParam}language=pt-BR&region=BR&page=${page}`;
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+
+    let url = '';
+    if (category === 'now_playing') {
+      // Filmes lançados nos últimos 75 dias até hoje, ordenados pelos mais badalados
+      const past75Days = new Date(now.getTime() - 75 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      url =
+        `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
+        `language=pt-BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
+        `&with_release_type=2|3&without_genres=99,10770` +
+        `&primary_release_date.gte=${past75Days}&primary_release_date.lte=${todayStr}` +
+        `&vote_count.gte=5&page=1`;
+    } else {
+      // Próximas estreias: de amanhã até 12 meses à frente, ordenadas pelos filmes mais falados/aguardados
+      const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      const next12Months = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      url =
+        `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
+        `language=pt-BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
+        `&with_release_type=2|3&without_genres=99,10770` +
+        `&primary_release_date.gte=${tomorrow}&primary_release_date.lte=${next12Months}` +
+        `&page=${page}`;
+    }
+
     const res = await fetch(url, { headers: auth.headers });
     if (!res.ok) return { results: [], hasMore: false };
     const data = await res.json();
 
-    const results = (data.results || [])
-      .filter((item) => item.poster_path)
+    const rawList = data.results || [];
+    const results = rawList
+      .filter((item) => {
+        if (!item.poster_path) return false;
+        // Filtra filmes muito obscuros/sem repercussão mínima
+        if (category === 'upcoming' && Number(item.popularity || 0) < 3.5) {
+          return false;
+        }
+        return true;
+      })
       .map((item) => ({
         tmdbId: item.id,
         title: item.title || item.original_title,
@@ -355,12 +394,24 @@ export async function fetchBrazilCinemaReleases(category = 'upcoming', page = 1)
         releaseDate: item.release_date || '',
         posterUrl: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
         overview: item.overview || '',
-        tmdbRating: item.vote_average ? Number(item.vote_average).toFixed(1) : '',
+        popularity: Number(item.popularity || 0),
+        tmdbRating:
+          item.vote_average && Number(item.vote_count || 0) >= 5
+            ? Number(item.vote_average).toFixed(1)
+            : '',
       }));
+
+    const lastItemPop =
+      rawList.length > 0 ? Number(rawList[rawList.length - 1].popularity || 0) : 0;
+    const hasMore =
+      category === 'upcoming' &&
+      Number(data.page || 1) < Number(data.total_pages || 1) &&
+      Number(data.page || 1) < 10 &&
+      lastItemPop >= 3.5;
 
     return {
       results,
-      hasMore: Number(data.page || 1) < Number(data.total_pages || 1),
+      hasMore,
     };
   } catch (err) {
     console.warn('Erro ao buscar estreias do TMDB:', err);
