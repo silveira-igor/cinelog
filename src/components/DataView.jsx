@@ -156,37 +156,43 @@ export default function DataView({
     setGoalInput(String(annualGoal || 24));
   }, [annualGoal]);
 
-  // Enriquecimento automático em background dos filmes antigos que ainda não têm duração/diretor/gênero/atores/estúdio
+  // Enriquecimento automático completo dos filmes antigos (busca todos de uma só vez em paralelo, sem fatiar de 10 em 10)
   useEffect(() => {
     let cancelled = false;
     const missingMetaVisits = visits.filter(
-      (v) =>
-        !v.isDemo &&
-        (!v.runtime || !v.director || !v.genres?.length || !v.cast?.length || !v.studio)
+      (v) => !v.isDemo && (!v.runtime || (!v.metaChecked && !v.cast?.length))
     );
     if (missingMetaVisits.length === 0) return;
 
+    // Deduplica por filme (movieKey) para buscar cada filme único apenas 1 vez
+    const uniqueByMovieKey = new Map();
+    for (const v of missingMetaVisits) {
+      const mKey =
+        v.movieKey ||
+        (v.tmdb_id ? `tmdb:${v.tmdb_id}` : `title:${normalizeTitle(v.title)}`);
+      if (!uniqueByMovieKey.has(mKey)) {
+        uniqueByMovieKey.set(mKey, { mKey, tmdbId: v.tmdb_id, title: v.title });
+      }
+    }
+
+    const targets = [...uniqueByMovieKey.values()];
+
     (async () => {
       let updatedAny = false;
-      for (const v of missingMetaVisits.slice(0, 10)) {
+      const BATCH_SIZE = 6;
+      for (let i = 0; i < targets.length; i += BATCH_SIZE) {
         if (cancelled) break;
-        const rich = await fetchMovieRichDetails({
-          tmdbId: v.tmdb_id,
-          title: v.title,
-        });
-        if (
-          rich.runtime ||
-          rich.director ||
-          rich.genres?.length ||
-          rich.cast?.length ||
-          rich.studio
-        ) {
-          const mKey =
-            v.movieKey ||
-            (v.tmdb_id ? `tmdb:${v.tmdb_id}` : `title:${normalizeTitle(v.title)}`);
-          saveMovieMetaToCache(mKey, rich);
-          updatedAny = true;
-        }
+        const batch = targets.slice(i, i + BATCH_SIZE);
+        await Promise.all(
+          batch.map(async (item) => {
+            const rich = await fetchMovieRichDetails({
+              tmdbId: item.tmdbId,
+              title: item.title,
+            });
+            saveMovieMetaToCache(item.mKey, rich);
+            updatedAny = true;
+          })
+        );
       }
       if (!cancelled && updatedAny && onRefreshVisits) {
         onRefreshVisits();

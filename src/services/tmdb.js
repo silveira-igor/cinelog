@@ -332,39 +332,47 @@ export async function fetchMoviePosters({ tmdbId, title }) {
 }
 
 /**
- * Filtra filmes que têm circuito/repercussão real (blockbusters, cotados para premiações,
- * comentados nas redes, circuito de pelo menos 2 semanas como A24/MUBI/festivais)
- * e barra filmes ultra nichados de 1 fim de semana (ex: Día Ocho) ou relançamentos velhos (ex: Fogaréu).
+ * Filtra filmes relevantes das Próximas Estreias:
+ * - Inclui documentários comentados (gênero 99, como You Can See Everything), filmes cotados para
+ *   premiações/festivais (Cliff Booth, Minotaure, I Play Rocky) e grandes estreias.
+ * - Barra apenas filmes ultra nichados sem repercussão (ex: Día Ocho) ou relançamentos velhos (ex: Fogaréu).
  */
-function isRelevantUpcomingMovie(item, todayStr) {
+function isRelevantUpcomingMovie(item, todayStr, isFromGlobalTop = false) {
   if (!item || !item.poster_path) return false;
   const rel = item.release_date || '';
   if (!rel || rel <= todayStr) return false;
 
   const titleLower = String(item.title || item.original_title || '').toLowerCase();
-  if (titleLower.includes('dia ocho') || titleLower.includes('día ocho') || titleLower.includes('fogareu') || titleLower.includes('fogaréu')) {
+  if (
+    titleLower.includes('dia ocho') ||
+    titleLower.includes('día ocho') ||
+    titleLower.includes('fogareu') ||
+    titleLower.includes('fogaréu')
+  ) {
     return false;
   }
 
   const pop = Number(item.popularity || 0);
   const votes = Number(item.vote_count || 0);
   const lang = String(item.original_language || '').toLowerCase();
-  const hasBackdrop = Boolean(item.backdrop_path);
-  const hasOverview = Boolean(item.overview && item.overview.trim().length >= 15);
+  const genres = Array.isArray(item.genre_ids) ? item.genre_ids : [];
+  const isDocumentary = genres.includes(99);
 
-  // Filmes em inglês, francês, italiano, alemão, japonês, coreano (circuito comercial + premiações/festivais como Cannes/Veneza/Oscar)
-  if (['en', 'fr', 'it', 'de', 'ja', 'ko'].includes(lang)) {
-    return pop >= 1.1 || votes >= 5;
+  // Se já veio do ranking global de mais populares do TMDB ou é documentário de destaque, aceita direto
+  if (isFromGlobalTop && pop >= 0.8) {
+    return true;
+  }
+  if (isDocumentary && (pop >= 0.6 || votes >= 2)) {
+    return true;
   }
 
-  // Filmes nacionais/lusófonos: exige divulgação mínima (sinopse + backdrop ou boa popularidade)
-  if (lang === 'pt') {
-    return (pop >= 2.2 && hasBackdrop && hasOverview) || pop >= 4.0 || votes >= 15;
+  // Filmes em inglês, francês, italiano, alemão, japonês, coreano, português
+  if (['en', 'fr', 'it', 'de', 'ja', 'ko', 'pt'].includes(lang)) {
+    return pop >= 0.9 || votes >= 3;
   }
 
-  // Filmes em espanhol ou outros idiomas fora do eixo principal: exige repercussão internacional real
-  // (barra filmes de 1 fim de semana como Día Ocho, mas mantém filmes falados/premiados)
-  return (pop >= 4.2 && hasBackdrop) || votes >= 25;
+  // Outros idiomas: exige repercussão mínima para barrar filmes de 1 fim de semana sem circuito
+  return pop >= 3.0 || votes >= 15;
 }
 
 function mapTmdbReleaseItem(item) {
@@ -391,12 +399,11 @@ let cachedUpcomingPool = {
 };
 
 /**
- * Busca os filmes Em Cartaz (now_playing) e Próximas Estreias (upcoming) pelo TMDB.
- * Combina:
- * 1) Calendário de estreias agendadas no Brasil (`region=BR`, mas exigindo `primary_release_date`
- *    nos últimos 10 meses para incluir filmes de festivais/premiações como Cliff Booth, Minotaure,
- *    I Play Rocky, You Can See Everything e barrar filmes antigos como Fogaréu de 2022).
- * 2) Grandes lançamentos globais dos próximos 14 meses (`sort_by=popularity.desc`).
+ * Busca os filmes Em Cartaz no Brasil (now_playing) e Próximas Estreias (upcoming) pelo TMDB.
+ * - Em Cartaz Agora (`now_playing`): usa o endpoint oficial `/movie/now_playing?language=pt-BR&region=BR`
+ *   para mostrar exatamente os 20 filmes em cartaz nos cinemas brasileiros.
+ * - Próximas Estreias (`upcoming`): NÃO exclui documentários (gênero 99, permitindo "You Can See Everything")
+ *   e combina os filmes mais aguardados/comentados dos próximos 14 meses com o calendário de estreias.
  */
 export async function fetchBrazilCinemaReleases(
   category = 'upcoming',
@@ -410,17 +417,9 @@ export async function fetchBrazilCinemaReleases(
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10);
 
+    // EM CARTAZ AGORA: Endpoint oficial de filmes em cartaz nos cinemas do Brasil (region=BR)
     if (category === 'now_playing') {
-      const past75Days = new Date(now.getTime() - 75 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .slice(0, 10);
-      const url =
-        `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
-        `language=pt-BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
-        `&without_genres=99,10770` +
-        `&primary_release_date.gte=${past75Days}&primary_release_date.lte=${todayStr}` +
-        `&vote_count.gte=5&page=1`;
-
+      const url = `https://api.themoviedb.org/3/movie/now_playing?${auth.authParam}language=pt-BR&region=BR&page=1`;
       const res = await fetch(url, { headers: auth.headers });
       if (!res.ok) return { results: [], hasMore: false };
       const data = await res.json();
@@ -432,6 +431,7 @@ export async function fetchBrazilCinemaReleases(
       return { results, hasMore: false };
     }
 
+    // PRÓXIMAS ESTREIAS: Pool curado (inclui documentários, cotados a premiações e blockbusters)
     const CACHE_TTL = 5 * 60 * 1000;
     if (
       Date.now() - cachedUpcomingPool.timestamp > CACHE_TTL ||
@@ -440,34 +440,19 @@ export async function fetchBrazilCinemaReleases(
       const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
-      const tenMonthsAgo = new Date(now.getTime() - 300 * 24 * 60 * 60 * 1000)
+      const twelveMonthsAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
       const next14Months = new Date(now.getTime() + 425 * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10);
 
-      // 1) Estreias agendadas no circuito brasileiro (inclui filmes de festivais/premiações que estreiam em breve no BR,
-      //    mas bloqueia filmes antigos antes de `tenMonthsAgo`)
-      const brPages = [1, 2, 3, 4, 5].map((p) => {
-        const url =
-          `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
-          `language=pt-BR&region=BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
-          `&with_release_type=2|3&without_genres=99,10770` +
-          `&release_date.gte=${tomorrow}&release_date.lte=${next14Months}` +
-          `&primary_release_date.gte=${tenMonthsAgo}` +
-          `&page=${p}`;
-        return fetch(url, { headers: auth.headers })
-          .then((r) => (r.ok ? r.json() : { results: [] }))
-          .catch(() => ({ results: [] }));
-      });
-
-      // 2) Filmes mais aguardados/comentados globalmente nos próximos 14 meses (mesmo que ainda sem data BR fixa)
-      const globalPages = [1, 2, 3, 4, 5].map((p) => {
+      // 1) Filmes mais comentados/aguardados nos próximos 14 meses (SEM bloquear documentários 99!)
+      const globalPages = [1, 2, 3, 4, 5, 6, 7].map((p) => {
         const url =
           `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
           `language=pt-BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
-          `&without_genres=99,10770` +
+          `&without_genres=10770` +
           `&primary_release_date.gte=${tomorrow}&primary_release_date.lte=${next14Months}` +
           `&page=${p}`;
         return fetch(url, { headers: auth.headers })
@@ -475,19 +460,41 @@ export async function fetchBrazilCinemaReleases(
           .catch(() => ({ results: [] }));
       });
 
-      const [brResults, globalResults] = await Promise.all([
-        Promise.all(brPages),
+      // 2) Estreias agendadas no Brasil (inclui documentários e filmes de festivais recentes que chegam ao BR)
+      const brPages = [1, 2, 3].map((p) => {
+        const url =
+          `https://api.themoviedb.org/3/discover/movie?${auth.authParam}` +
+          `language=pt-BR&region=BR&sort_by=popularity.desc&include_adult=false&include_video=false` +
+          `&without_genres=10770` +
+          `&release_date.gte=${tomorrow}&release_date.lte=${next14Months}` +
+          `&primary_release_date.gte=${twelveMonthsAgo}` +
+          `&page=${p}`;
+        return fetch(url, { headers: auth.headers })
+          .then((r) => (r.ok ? r.json() : { results: [] }))
+          .catch(() => ({ results: [] }));
+      });
+
+      const [globalResults, brResults] = await Promise.all([
         Promise.all(globalPages),
+        Promise.all(brPages),
       ]);
 
       const seenIds = new Set();
       const curated = [];
 
-      // Prioriza os dados com data de estreia brasileira (quando disponíveis) e complementa com o calendário global
-      for (const pData of [...brResults, ...globalResults]) {
+      for (const pData of globalResults) {
         for (const item of pData.results || []) {
           if (!item || seenIds.has(item.id)) continue;
-          if (!isRelevantUpcomingMovie(item, todayStr)) continue;
+          if (!isRelevantUpcomingMovie(item, todayStr, true)) continue;
+          seenIds.add(item.id);
+          curated.push(mapTmdbReleaseItem(item));
+        }
+      }
+
+      for (const pData of brResults) {
+        for (const item of pData.results || []) {
+          if (!item || seenIds.has(item.id)) continue;
+          if (!isRelevantUpcomingMovie(item, todayStr, false)) continue;
           seenIds.add(item.id);
           curated.push(mapTmdbReleaseItem(item));
         }

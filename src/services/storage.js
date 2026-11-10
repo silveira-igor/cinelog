@@ -52,8 +52,19 @@ function saveLocalVisitsRaw(visits) {
  */
 export function getMovieMetaCache() {
   try {
-    const raw = localStorage.getItem(MOVIE_META_CACHE_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const rawV1 = localStorage.getItem('cinelog_movie_meta_cache_v1');
+    const rawV2 = localStorage.getItem(MOVIE_META_CACHE_KEY);
+    const parsedV1 = rawV1 ? JSON.parse(rawV1) : {};
+    const parsedV2 = rawV2 ? JSON.parse(rawV2) : {};
+    const merged = { ...parsedV1 };
+    for (const [k, v] of Object.entries(parsedV2)) {
+      merged[k] = {
+        ...(parsedV1[k] || {}),
+        ...v,
+        runtime: Number(v.runtime || parsedV1[k]?.runtime || 0),
+      };
+    }
+    return merged;
   } catch {
     return {};
   }
@@ -63,12 +74,20 @@ export function saveMovieMetaToCache(movieKey, meta) {
   if (!movieKey || !meta) return;
   try {
     const current = getMovieMetaCache();
+    const prev = current[movieKey] || {};
     current[movieKey] = {
-      runtime: Number(meta.runtime || 0),
-      genres: Array.isArray(meta.genres) ? meta.genres : [],
-      director: String(meta.director || ''),
-      cast: Array.isArray(meta.cast) ? meta.cast.slice(0, 3) : [],
-      studio: String(meta.studio || ''),
+      runtime: Number(meta.runtime || prev.runtime || 0),
+      genres:
+        Array.isArray(meta.genres) && meta.genres.length > 0
+          ? meta.genres
+          : prev.genres || [],
+      director: String(meta.director || prev.director || ''),
+      cast:
+        Array.isArray(meta.cast) && meta.cast.length > 0
+          ? meta.cast.slice(0, 3)
+          : prev.cast || [],
+      studio: String(meta.studio || prev.studio || ''),
+      checked: true,
     };
     localStorage.setItem(MOVIE_META_CACHE_KEY, JSON.stringify(current));
   } catch {
@@ -460,6 +479,7 @@ export function enrichVisitsWithAutoFlags(rawVisits, primaryProfileUsername = ''
       director,
       cast,
       studio,
+      metaChecked: Boolean(cached.checked),
       isManualRewatch,
       isPreRelease,
       isReexibicao,
