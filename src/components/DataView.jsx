@@ -138,6 +138,7 @@ export default function DataView({
 
   // Aba "Em Breve / Quero Ver no Cinema"
   const [upcomingSubTab, setUpcomingSubTab] = useState('watchlist'); // 'watchlist' | 'upcoming' | 'now_playing'
+  const [upcomingSortMode, setUpcomingSortMode] = useState('date'); // 'date' (Mais Próximos) | 'popularity' (Mais Aguardados)
   const [tmdbReleases, setTmdbReleases] = useState([]);
   const [releasesPage, setReleasesPage] = useState(1);
   const [hasMoreReleases, setHasMoreReleases] = useState(false);
@@ -310,6 +311,22 @@ export default function DataView({
       return da.localeCompare(db);
     });
   }, [watchlist]);
+
+  // Ordena "Próximas Estreias" por Mais Próximos (data crescente) ou Mais Aguardados (popularidade)
+  const displayedTmdbReleases = useMemo(() => {
+    const list = [...tmdbReleases];
+    if (upcomingSubTab !== 'upcoming') return list;
+
+    if (upcomingSortMode === 'date') {
+      return list.sort((a, b) => {
+        const da = a.releaseDate || '9999-12-31';
+        const db = b.releaseDate || '9999-12-31';
+        return da.localeCompare(db);
+      });
+    }
+
+    return list.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+  }, [tmdbReleases, upcomingSubTab, upcomingSortMode]);
 
   const availableYears = useMemo(() => {
     const years = new Set();
@@ -1640,8 +1657,34 @@ export default function DataView({
             </div>
           ) : (
             <>
+              {upcomingSubTab === 'upcoming' && (
+                <div className="lb-upcoming-sort-bar">
+                  <span className="lb-upcoming-sort-label">Ordenar estreias por:</span>
+                  <div className="lb-upcoming-sort-buttons">
+                    <button
+                      type="button"
+                      className={`lb-sort-pill-btn ${
+                        upcomingSortMode === 'date' ? 'active' : ''
+                      }`}
+                      onClick={() => setUpcomingSortMode('date')}
+                    >
+                      <CalendarIcon size={13} /> Mais Próximos
+                    </button>
+                    <button
+                      type="button"
+                      className={`lb-sort-pill-btn ${
+                        upcomingSortMode === 'popularity' ? 'active' : ''
+                      }`}
+                      onClick={() => setUpcomingSortMode('popularity')}
+                    >
+                      <Sparkles size={13} /> Mais Aguardados
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="lb-poster-gallery-grid">
-                {tmdbReleases.map((movie) => {
+                {displayedTmdbReleases.map((movie) => {
                   const isSaved = watchlist.some(
                     (w) =>
                       (w.tmdbId && w.tmdbId === movie.tmdbId) ||

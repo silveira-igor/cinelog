@@ -2893,3 +2893,56 @@ select {
   margin-top: 1.35rem;
   padding-bottom: 0.5rem;
 }
+
+/* Barra de Ordenação em Próximas Estreias (Mais Próximos vs Mais Aguardados) */
+.lb-upcoming-sort-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--lb-surface);
+  border: 1px solid var(--lb-border);
+  border-radius: 9px;
+}
+
+.lb-upcoming-sort-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--lb-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.lb-upcoming-sort-buttons {
+  display: inline-flex;
+  gap: 0.45rem;
+}
+
+.lb-sort-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  background: var(--lb-bg);
+  border: 1px solid var(--lb-border);
+  color: var(--lb-text-secondary);
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.lb-sort-pill-btn:hover {
+  border-color: var(--lb-blue);
+  color: var(--lb-text);
+}
+
+.lb-sort-pill-btn.active {
+  background: rgba(64, 188, 244, 0.16);
+  border-color: var(--lb-blue);
+  color: var(--lb-blue);
+}
