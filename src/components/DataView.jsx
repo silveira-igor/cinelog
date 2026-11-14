@@ -44,6 +44,9 @@ import {
 } from '../services/tmdb';
 import { OSCAR_EDITIONS, matchOscarNominee } from '../data/oscar';
 
+// Controle de visibilidade da aba do Oscar (alterne para true quando for reativar)
+const SHOW_OSCAR_TAB = false;
+
 const MONTH_NAMES = [
   'Janeiro',
   'Fevereiro',
@@ -871,14 +874,16 @@ export default function DataView({
             >
               <Layers size={15} /> Tier List
             </button>
-            <button
-              type="button"
-              className={`lb-tab-btn ${activeTab === 'oscar' ? 'active' : ''}`}
-              onClick={() => setActiveTab('oscar')}
-              title="Checklist Oficial do Oscar 2027 (Todas as 24 categorias)"
-            >
-              <Trophy size={15} /> Oscar 2027
-            </button>
+            {SHOW_OSCAR_TAB && (
+              <button
+                type="button"
+                className={`lb-tab-btn ${activeTab === 'oscar' ? 'active' : ''}`}
+                onClick={() => setActiveTab('oscar')}
+                title="Checklist Oficial do Oscar 2027 (Todas as 24 categorias)"
+              >
+                <Trophy size={15} /> Oscar 2027
+              </button>
+            )}
             <button
               type="button"
               className={`lb-tab-btn ${activeTab === 'stats' ? 'active' : ''}`}
@@ -1355,8 +1360,8 @@ export default function DataView({
         </div>
       )}
 
-      {/* ABA: CHECKLIST E TEMPORADA DO OSCAR 2027 */}
-      {activeTab === 'oscar' && (
+      {/* ABA: CHECKLIST E TEMPORADA DO OSCAR 2027 (invisível até reativação) */}
+      {SHOW_OSCAR_TAB && activeTab === 'oscar' && (
         <div className="lb-oscar-container">
           <div className="lb-oscar-hero-card">
             <div className="lb-oscar-hero-top">
