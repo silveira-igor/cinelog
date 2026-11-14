@@ -3098,9 +3098,9 @@ select {
     order: 3;
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     padding: 4px;
-    gap: 4px;
+    gap: 3px;
     background: #0d1115;
     border: 1px solid rgba(255, 255, 255, 0.22);
     border-radius: 10px;
@@ -3108,8 +3108,8 @@ select {
 
   .lb-dataview-topbar .lb-tab-btn {
     width: 100%;
-    padding: 0.55rem 0.25rem;
-    font-size: 0.76rem;
+    padding: 0.52rem 0.15rem;
+    font-size: 0.72rem;
     justify-content: center;
     white-space: nowrap;
   }
@@ -3502,4 +3502,230 @@ select {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+
+/* ============================================================================
+   CHECKLIST DO OSCAR (TEMPORADA DE PREMIAÇÕES)
+   ============================================================================ */
+.lb-oscar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.lb-oscar-hero-card {
+  background: linear-gradient(135deg, #242a1e 0%, #171d24 100%);
+  border: 1px solid rgba(255, 215, 0, 0.35);
+  border-radius: 12px;
+  padding: 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.lb-oscar-hero-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.lb-oscar-hero-top h2 {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  margin-top: 3px;
+  color: #fff;
+}
+
+.lb-oscar-hero-top p {
+  font-size: 0.82rem;
+  color: var(--lb-text-secondary);
+  max-width: 580px;
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+.lb-oscar-edition-selector {
+  display: inline-flex;
+  gap: 0.45rem;
+}
+
+.lb-oscar-progress-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  background: rgba(15, 19, 23, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  padding: 0.95rem 1.1rem;
+}
+
+.lb-oscar-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.86rem;
+  color: #fff;
+}
+
+.lb-oscar-progress-pct {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #ffd700;
+}
+
+.lb-oscar-progress-caption {
+  font-size: 0.74rem;
+  color: var(--lb-text-secondary);
+  margin-top: 2px;
+}
+
+.lb-oscar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.lb-oscar-card {
+  background: var(--lb-bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 0.95rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: all 0.15s ease;
+  cursor: default;
+}
+
+.lb-oscar-card.watched {
+  border-color: rgba(0, 224, 84, 0.4);
+  background: rgba(0, 224, 84, 0.04);
+  cursor: pointer;
+}
+
+.lb-oscar-card.watched:hover {
+  border-color: var(--lb-green);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 224, 84, 0.15);
+}
+
+.lb-oscar-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.lb-oscar-title-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lb-oscar-title-col h4 {
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.lb-oscar-original-title {
+  font-size: 0.75rem;
+  color: var(--lb-text-muted);
+  font-style: italic;
+}
+
+.lb-oscar-director {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: var(--lb-text-secondary);
+  margin-top: 2px;
+}
+
+.lb-oscar-badge-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.lb-oscar-status-pill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lb-oscar-status-pill.watched {
+  background: rgba(0, 224, 84, 0.18);
+  border: 1px solid rgba(0, 224, 84, 0.5);
+  color: var(--lb-green);
+}
+
+.lb-oscar-status-pill.watchlist {
+  background: rgba(64, 188, 244, 0.18);
+  border: 1px solid rgba(64, 188, 244, 0.45);
+  color: var(--lb-blue);
+}
+
+.lb-oscar-status-pill.pending {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: var(--lb-text-muted);
+}
+
+.lb-oscar-winner-tag {
+  font-size: 0.64rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  background: rgba(255, 215, 0, 0.18);
+  border: 1px solid rgba(255, 215, 0, 0.5);
+  color: #ffd700;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.lb-oscar-visit-snippet {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  color: var(--lb-text-secondary);
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lb-oscar-view-more {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--lb-green);
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .lb-oscar-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lb-oscar-hero-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lb-oscar-edition-selector {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
 }

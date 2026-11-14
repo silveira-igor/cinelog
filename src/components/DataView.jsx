@@ -28,6 +28,8 @@ import {
   Loader2,
   X,
   Layers,
+  Trophy,
+  CheckCircle2,
 } from 'lucide-react';
 import { StarDisplay } from './StarRating';
 import {
@@ -40,6 +42,7 @@ import {
   fetchBrazilCinemaReleases,
   searchMovies,
 } from '../services/tmdb';
+import { OSCAR_EDITIONS, matchOscarNominee } from '../data/oscar';
 
 const MONTH_NAMES = [
   'Janeiro',
@@ -153,6 +156,9 @@ export default function DataView({
   // Modal de detalhes de filme nas 3 abas de "Em Breve"
   const [selectedUpcomingMovie, setSelectedUpcomingMovie] = useState(null);
   const [loadingUpcomingDetail, setLoadingUpcomingDetail] = useState(false);
+
+  // Ano selecionado no Checklist do Oscar (padrão: edição 2026)
+  const [selectedOscarYear, setSelectedOscarYear] = useState(2026);
 
   useEffect(() => {
     setGoalInput(String(annualGoal || 24));
@@ -704,6 +710,38 @@ export default function DataView({
     return tiers;
   }, [filteredVisits]);
 
+  // Checklist e Progresso do Oscar (Melhor Filme)
+  const oscarAnalysis = useMemo(() => {
+    const currentEdition =
+      OSCAR_EDITIONS.find((ed) => ed.year === selectedOscarYear) || OSCAR_EDITIONS[0];
+
+    const nomineeMatches = currentEdition.nominees.map((nominee) => {
+      // Busca nas visitas registradas se o usuário assistiu no cinema
+      const matchedVisit = visits.find((v) => matchOscarNominee(nominee, v));
+      // Se não assistiu no cinema, verifica se está salvo na Watchlist
+      const isInWatchlist = watchlist.some((w) => matchOscarNominee(nominee, w));
+
+      return {
+        ...nominee,
+        watched: Boolean(matchedVisit),
+        visit: matchedVisit || null,
+        inWatchlist: isInWatchlist,
+      };
+    });
+
+    const watchedCount = nomineeMatches.filter((n) => n.watched).length;
+    const totalNominees = nomineeMatches.length;
+    const progressPct = totalNominees > 0 ? Math.round((watchedCount / totalNominees) * 100) : 0;
+
+    return {
+      currentEdition,
+      nomineeMatches,
+      watchedCount,
+      totalNominees,
+      progressPct,
+    };
+  }, [visits, watchlist, selectedOscarYear]);
+
   const getCountdownLabel = (releaseDateStr) => {
     if (!releaseDateStr) return 'Sem data';
     const now = new Date();
@@ -756,6 +794,14 @@ export default function DataView({
               title="Tier List Automática baseada nas suas notas"
             >
               <Layers size={15} /> Tier List
+            </button>
+            <button
+              type="button"
+              className={`lb-tab-btn ${activeTab === 'oscar' ? 'active' : ''}`}
+              onClick={() => setActiveTab('oscar')}
+              title="Checklist do Oscar (Melhor Filme)"
+            >
+              <Trophy size={15} /> Oscar
             </button>
             <button
               type="button"
@@ -1229,6 +1275,133 @@ export default function DataView({
                   </div>
                 </div>
               ))}
+          </div>
+        </div>
+      )}
+
+      {/* ABA: CHECKLIST E TEMPORADA DO OSCAR */}
+      {activeTab === 'oscar' && (
+        <div className="lb-oscar-container">
+          <div className="lb-oscar-hero-card">
+            <div className="lb-oscar-hero-top">
+              <div>
+                <span className="lb-eyebrow">
+                  <Trophy size={13} style={{ verticalAlign: 'middle' }} /> TEMPORADA DE PREMIAÇÕES
+                </span>
+                <h2>Checklist do Oscar: Melhor Filme</h2>
+                <p>
+                  Acompanhe quantos dos 10 filmes indicados à categoria principal você já conferiu na tela grande.
+                </p>
+              </div>
+
+              {/* Seletor de Edição do Oscar */}
+              <div className="lb-oscar-edition-selector">
+                {OSCAR_EDITIONS.map((ed) => (
+                  <button
+                    key={ed.year}
+                    type="button"
+                    className={`lb-sort-pill-btn ${selectedOscarYear === ed.year ? 'active' : ''}`}
+                    onClick={() => setSelectedOscarYear(ed.year)}
+                  >
+                    <Trophy size={13} /> {ed.year}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Barra de Progresso do Oscar */}
+            <div className="lb-oscar-progress-block">
+              <div className="lb-oscar-progress-header">
+                <strong>
+                  {oscarAnalysis.watchedCount} de {oscarAnalysis.totalNominees} filmes assistidos no cinema
+                </strong>
+                <span className="lb-oscar-progress-pct">{oscarAnalysis.progressPct}%</span>
+              </div>
+              <div className="lb-comparison-track" style={{ height: '12px' }}>
+                <div
+                  className="lb-comparison-fill-free"
+                  style={{
+                    width: `${oscarAnalysis.progressPct}%`,
+                    background:
+                      oscarAnalysis.progressPct === 100
+                        ? 'linear-gradient(90deg, #ffc107 0%, #ff8000 100%)'
+                        : 'var(--lb-green)',
+                  }}
+                />
+              </div>
+              <span className="lb-oscar-progress-caption">
+                {oscarAnalysis.progressPct === 100
+                  ? '🏆 Gabaritou! Você assistiu a todos os indicados a Melhor Filme na telona!'
+                  : oscarAnalysis.progressPct >= 50
+                  ? '🎬 Excelente ritmo! Mais da metade dos indicados assistidos no cinema.'
+                  : '🍿 Fique de olho nas salas para completar a lista antes ou depois da cerimônia!'}
+              </span>
+            </div>
+          </div>
+
+          {/* Grid dos 10 Indicados com Status */}
+          <div className="lb-oscar-grid">
+            {oscarAnalysis.nomineeMatches.map((nominee) => (
+              <div
+                key={nominee.title}
+                className={`lb-oscar-card ${nominee.watched ? 'watched' : 'unwatched'}`}
+                onClick={() => {
+                  if (nominee.visit) {
+                    setSelectedVisitDetail(nominee.visit);
+                  }
+                }}
+              >
+                <div className="lb-oscar-card-header">
+                  <div className="lb-oscar-title-col">
+                    <h4>{nominee.title}</h4>
+                    {nominee.originalTitle && nominee.originalTitle !== nominee.title && (
+                      <span className="lb-oscar-original-title">
+                        {nominee.originalTitle}
+                      </span>
+                    )}
+                    <span className="lb-oscar-director">
+                      <Clapperboard size={11} /> {nominee.director}
+                    </span>
+                  </div>
+
+                  <div className="lb-oscar-badge-col">
+                    {nominee.watched ? (
+                      <span className="lb-oscar-status-pill watched">
+                        <CheckCircle2 size={13} /> Assistido no Cinema
+                      </span>
+                    ) : nominee.inWatchlist ? (
+                      <span className="lb-oscar-status-pill watchlist">
+                        <Bookmark size={12} /> Na sua lista Quero Ver
+                      </span>
+                    ) : (
+                      <span className="lb-oscar-status-pill pending">
+                        Pendente
+                      </span>
+                    )}
+                    {nominee.isWinner && (
+                      <span className="lb-oscar-winner-tag">
+                        ★ VENCEDOR DO OSCAR
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {nominee.watched && nominee.visit && (
+                  <div className="lb-oscar-visit-snippet">
+                    <StarDisplay rating={nominee.visit.rating} size="sm" />
+                    <span className="lb-month-meta-dot">•</span>
+                    <span>{formatDateBR(nominee.visit.visit_date)}</span>
+                    {nominee.visit.cinema_location && (
+                      <>
+                        <span className="lb-month-meta-dot">•</span>
+                        <span>{nominee.visit.cinema_location}</span>
+                      </>
+                    )}
+                    <span className="lb-oscar-view-more">Ver detalhes →</span>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
