@@ -27,6 +27,7 @@ import {
   Check,
   Loader2,
   X,
+  Layers,
 } from 'lucide-react';
 import { StarDisplay } from './StarRating';
 import {
@@ -121,7 +122,7 @@ export default function DataView({
 }) {
   const [activeTab, setActiveTab] = useState(
     mode === 'upcoming' ? 'upcoming' : 'grid'
-  ); // 'grid' | 'diary' | 'stats' | 'upcoming'
+  ); // 'grid' | 'diary' | 'tierlist' | 'stats' | 'upcoming'
 
   useEffect(() => {
     setActiveTab(mode === 'upcoming' ? 'upcoming' : 'grid');
@@ -652,6 +653,57 @@ export default function DataView({
     setEditingGoal(false);
   };
 
+  // Tier List Automática baseada nas notas das idas filtradas
+  const tierListGroups = useMemo(() => {
+    const tiers = {
+      S: { label: 'S', color: 'tier-s', desc: '5 Estrelas (Obra-prima)', items: [] },
+      A: { label: 'A', color: 'tier-a', desc: '4 a 4.5 Estrelas (Excelente)', items: [] },
+      B: { label: 'B', color: 'tier-b', desc: '3 a 3.5 Estrelas (Bom / Valeu o ingresso)', items: [] },
+      C: { label: 'C', color: 'tier-c', desc: '2 a 2.5 Estrelas (Regular / Esquecível)', items: [] },
+      D: { label: 'D', color: 'tier-d', desc: '0.5 a 1.5 Estrela (Decepção / Péssimo)', items: [] },
+      UNRATED: { label: '?', color: 'tier-unrated', desc: 'Sem avaliação de nota', items: [] },
+    };
+
+    // Para evitar poluir a tier list com sessões repetidas do mesmo filme,
+    // agrupamos por título/filme mantendo a melhor nota
+    const uniqueMovies = new Map();
+    for (const v of filteredVisits) {
+      const key = v.tmdb_id ? `tmdb:${v.tmdb_id}` : `title:${normalizeTitle(v.title)}`;
+      if (!uniqueMovies.has(key)) {
+        uniqueMovies.set(key, v);
+      } else {
+        const existing = uniqueMovies.get(key);
+        if (Number(v.rating || 0) > Number(existing.rating || 0)) {
+          uniqueMovies.set(key, v);
+        }
+      }
+    }
+
+    for (const visit of uniqueMovies.values()) {
+      const r = Number(visit.rating || 0);
+      if (r >= 5) {
+        tiers.S.items.push(visit);
+      } else if (r >= 4) {
+        tiers.A.items.push(visit);
+      } else if (r >= 3) {
+        tiers.B.items.push(visit);
+      } else if (r >= 2) {
+        tiers.C.items.push(visit);
+      } else if (r > 0) {
+        tiers.D.items.push(visit);
+      } else {
+        tiers.UNRATED.items.push(visit);
+      }
+    }
+
+    // Ordena os filmes dentro de cada tier pela nota decrescente
+    for (const tier of Object.values(tiers)) {
+      tier.items.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0));
+    }
+
+    return tiers;
+  }, [filteredVisits]);
+
   const getCountdownLabel = (releaseDateStr) => {
     if (!releaseDateStr) return 'Sem data';
     const now = new Date();
@@ -696,6 +748,14 @@ export default function DataView({
               onClick={() => setActiveTab('diary')}
             >
               <CalendarIcon size={15} /> Diário
+            </button>
+            <button
+              type="button"
+              className={`lb-tab-btn ${activeTab === 'tierlist' ? 'active' : ''}`}
+              onClick={() => setActiveTab('tierlist')}
+              title="Tier List Automática baseada nas suas notas"
+            >
+              <Layers size={15} /> Tier List
             </button>
             <button
               type="button"
@@ -1100,6 +1160,76 @@ export default function DataView({
               );
             })
           )}
+        </div>
+      )}
+
+      {/* ABA: TIER LIST AUTOMÁTICA */}
+      {activeTab === 'tierlist' && (
+        <div className="lb-tierlist-container">
+          <div className="lb-tierlist-header-card">
+            <div className="lb-tierlist-header-info">
+              <span className="lb-eyebrow">
+                <Layers size={13} style={{ verticalAlign: 'middle' }} /> RANKING AUTOMÁTICO DE NOTAS
+              </span>
+              <h3>Tier List dos Filmes no Cinema</h3>
+              <p>
+                Os filmes filtrados são distribuídos automaticamente em tiers (S, A, B, C, D)
+                baseados nas notas em estrelas que você deu.
+              </p>
+            </div>
+            <div className="lb-tierlist-legend">
+              <span className="lb-tier-chip tier-s">S = 5.0★</span>
+              <span className="lb-tier-chip tier-a">A = 4.0 – 4.5★</span>
+              <span className="lb-tier-chip tier-b">B = 3.0 – 3.5★</span>
+              <span className="lb-tier-chip tier-c">C = 2.0 – 2.5★</span>
+              <span className="lb-tier-chip tier-d">D = 0.5 – 1.5★</span>
+            </div>
+          </div>
+
+          <div className="lb-tier-rows">
+            {Object.entries(tierListGroups)
+              .filter(([key, group]) => key !== 'UNRATED' || group.items.length > 0)
+              .map(([key, group]) => (
+                <div key={key} className={`lb-tier-row ${group.color}`}>
+                  <div className="lb-tier-badge">
+                    <span className="lb-tier-letter">{group.label}</span>
+                    <span className="lb-tier-count">{group.items.length}</span>
+                  </div>
+
+                  <div className="lb-tier-items-track">
+                    {group.items.length === 0 ? (
+                      <div className="lb-tier-empty">Nenhum filme neste tier</div>
+                    ) : (
+                      group.items.map((visit) => (
+                        <div
+                          key={visit.id}
+                          className="lb-tier-poster-card"
+                          onClick={() => setSelectedVisitDetail(visit)}
+                          title={`${visit.title} • Nota: ${visit.rating}★`}
+                        >
+                          {visit.poster_url ? (
+                            <img
+                              src={visit.poster_url}
+                              alt={visit.title}
+                              className="lb-tier-poster-img"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="lb-tier-poster-fallback">
+                              <Film size={18} />
+                              <span>{visit.title}</span>
+                            </div>
+                          )}
+                          <div className="lb-tier-poster-hover-pill">
+                            <StarDisplay rating={visit.rating} size="sm" />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ))}
+          </div>
         </div>
       )}
 
