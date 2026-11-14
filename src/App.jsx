@@ -80,6 +80,22 @@ export default function App() {
   );
   const [annualGoal, setAnnualGoal] = useState(24);
   const [watchlist, setWatchlist] = useState([]);
+  const [oscarChecklist, setOscarChecklist] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cinelog_oscar_checklist');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [oscarCustomNominees, setOscarCustomNominees] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cinelog_oscar_custom_nominees');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
   const [isDemoMode, setIsDemoMode] = useState(
     () => !(getUrlSharedUsername() || getActiveProfileUsername())
   );
@@ -114,6 +130,18 @@ export default function App() {
       setIsDemoMode(Boolean(res.isDemoMode));
       setAnnualGoal(Number(res.annualGoal || 24));
       setWatchlist(Array.isArray(res.watchlist) ? res.watchlist : []);
+      if (res.oscarChecklist && typeof res.oscarChecklist === 'object') {
+        setOscarChecklist(res.oscarChecklist);
+        try {
+          localStorage.setItem('cinelog_oscar_checklist', JSON.stringify(res.oscarChecklist));
+        } catch {}
+      }
+      if (res.oscarCustomNominees && typeof res.oscarCustomNominees === 'object') {
+        setOscarCustomNominees(res.oscarCustomNominees);
+        try {
+          localStorage.setItem('cinelog_oscar_custom_nominees', JSON.stringify(res.oscarCustomNominees));
+        } catch {}
+      }
 
       if (res.activeUsername) {
         setActiveUsername(res.activeUsername);
@@ -358,6 +386,72 @@ export default function App() {
       }
       setWatchlist(nextList);
       await updateProfilePreferences(activeUsername, { watchlist: nextList });
+    });
+  };
+
+  // Alternar item no Checklist do Oscar (marcar/desmarcar como assistido fora do cinema)
+  const handleToggleOscarChecklistItem = async (nomineeKey) => {
+    requireUnlockedProfile(async () => {
+      const nextChecklist = {
+        ...oscarChecklist,
+        [nomineeKey]: !oscarChecklist[nomineeKey],
+      };
+      setOscarChecklist(nextChecklist);
+      try {
+        localStorage.setItem('cinelog_oscar_checklist', JSON.stringify(nextChecklist));
+      } catch {}
+      if (activeUsername) {
+        await updateProfilePreferences(activeUsername, { oscarChecklist: nextChecklist });
+      }
+    });
+  };
+
+  // Adicionar indicado/filme personalizado a uma categoria do Oscar (ex: curta documentário)
+  const handleAddOscarCustomNominee = async (categoryId, nomineeTitle) => {
+    requireUnlockedProfile(async () => {
+      const trimmed = String(nomineeTitle || '').trim();
+      if (!trimmed) return;
+      const currentList = Array.isArray(oscarCustomNominees[categoryId])
+        ? oscarCustomNominees[categoryId]
+        : [];
+      const newNominee = {
+        id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        title: trimmed,
+        originalTitle: trimmed,
+        aliases: [trimmed],
+        isCustom: true,
+      };
+      const nextCustom = {
+        ...oscarCustomNominees,
+        [categoryId]: [...currentList, newNominee],
+      };
+      setOscarCustomNominees(nextCustom);
+      try {
+        localStorage.setItem('cinelog_oscar_custom_nominees', JSON.stringify(nextCustom));
+      } catch {}
+      if (activeUsername) {
+        await updateProfilePreferences(activeUsername, { oscarCustomNominees: nextCustom });
+      }
+    });
+  };
+
+  // Remover indicado personalizado de uma categoria
+  const handleRemoveOscarCustomNominee = async (categoryId, nomineeId) => {
+    requireUnlockedProfile(async () => {
+      const currentList = Array.isArray(oscarCustomNominees[categoryId])
+        ? oscarCustomNominees[categoryId]
+        : [];
+      const nextCustom = {
+        ...oscarCustomNominees,
+        [categoryId]: currentList.filter((n) => n.id !== nomineeId),
+      };
+      setOscarCustomNominees(nextCustom);
+      try {
+        localStorage.setItem('cinelog_oscar_custom_nominees', JSON.stringify(nextCustom));
+      } catch {}
+      if (activeUsername) {
+        await updateProfilePreferences(activeUsername, { oscarCustomNominees: nextCustom });
+      }
     });
   };
 
@@ -800,6 +894,11 @@ export default function App() {
             onUpdateAnnualGoal={handleUpdateAnnualGoal}
             watchlist={watchlist}
             onToggleWatchlistItem={handleToggleWatchlistItem}
+            oscarChecklist={oscarChecklist}
+            oscarCustomNominees={oscarCustomNominees}
+            onToggleOscarChecklistItem={handleToggleOscarChecklistItem}
+            onAddOscarCustomNominee={handleAddOscarCustomNominee}
+            onRemoveOscarCustomNominee={handleRemoveOscarCustomNominee}
             onRefreshVisits={() => loadVisits(activeUsername)}
             isReadOnlyVisitor={isReadOnlyVisitor}
           />

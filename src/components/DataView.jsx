@@ -120,12 +120,17 @@ export default function DataView({
   onUpdateAnnualGoal,
   watchlist = [],
   onToggleWatchlistItem,
+  oscarChecklist = {},
+  oscarCustomNominees = {},
+  onToggleOscarChecklistItem,
+  onAddOscarCustomNominee,
+  onRemoveOscarCustomNominee,
   onRefreshVisits,
   isReadOnlyVisitor = false,
 }) {
   const [activeTab, setActiveTab] = useState(
     mode === 'upcoming' ? 'upcoming' : 'grid'
-  ); // 'grid' | 'diary' | 'tierlist' | 'stats' | 'upcoming'
+  ); // 'grid' | 'diary' | 'tierlist' | 'oscar' | 'stats' | 'upcoming'
 
   useEffect(() => {
     setActiveTab(mode === 'upcoming' ? 'upcoming' : 'grid');
@@ -136,6 +141,7 @@ export default function DataView({
   const [originFilter, setOriginFilter] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedVisitDetail, setSelectedVisitDetail] = useState(null);
+  const [categoryInputText, setCategoryInputText] = useState({});
 
   // Edição inline da Meta Anual
   const [editingGoal, setEditingGoal] = useState(false);
@@ -716,40 +722,101 @@ export default function DataView({
     const currentEdition =
       OSCAR_EDITIONS.find((ed) => ed.year === selectedOscarYear) || OSCAR_EDITIONS[0];
 
-    const allCategories = currentEdition.categories || [];
+    const allCategories = currentEdition?.categories || [];
     const filteredCategories =
       selectedOscarCategoryFilter === 'ALL'
         ? allCategories
         : allCategories.filter((cat) => cat.group === selectedOscarCategoryFilter);
 
-    // Mapeamento das categorias e seus indicados (quando anunciados)
+    // Mapeamento das categorias e seus indicados (oficiais + customizados)
     const categoryMatches = filteredCategories.map((category) => {
-      const nomineesWithStatus = (category.nominees || []).map((nominee) => {
+      const officialNominees = category.nominees || [];
+      const customNominees = (oscarCustomNominees && oscarCustomNominees[category.id]) || [];
+      const combinedNominees = [...officialNominees, ...customNominees];
+
+      const nomineesWithStatus = combinedNominees.map((nominee, idx) => {
+        const nomineeKey = `${category.id}:${nominee.id || nominee.title || idx}`;
+        // 1. Checa se tem registro nos cinemas no histórico do app
         const matchedVisit = visits.find((v) => matchOscarNominee(nominee, v));
+        // 2. Checa se o usuário marcou manualmente no checklist do Oscar (fora do cinema / streaming)
+        const isManuallyChecked = Boolean(oscarChecklist && oscarChecklist[nomineeKey]);
+        const isWatched = Boolean(matchedVisit) || isManuallyChecked;
+
+        // 3. Checa se está na lista Quero Ver
         const isInWatchlist = watchlist.some((w) => matchOscarNominee(nominee, w));
+
         return {
           ...nominee,
-          watched: Boolean(matchedVisit),
+          nomineeKey,
+          watched: isWatched,
+          watchedAtCinema: Boolean(matchedVisit),
           visit: matchedVisit || null,
           inWatchlist: isInWatchlist,
         };
       });
 
       const watchedCount = nomineesWithStatus.filter((n) => n.watched).length;
+      const cinemaCount = nomineesWithStatus.filter((n) => n.watchedAtCinema).length;
+      const homeCount = watchedCount - cinemaCount;
+
       return {
         ...category,
         nomineesWithStatus,
         watchedCount,
+        cinemaCount,
+        homeCount,
       };
     });
+
+    // Totais gerais do Checklist (baseado em todas as 24 categorias)
+    let totalNomineesCount = 0;
+    let totalWatchedCount = 0;
+    let totalCinemaCount = 0;
+
+    for (const cat of allCategories) {
+      const official = cat.nominees || [];
+      const custom = (oscarCustomNominees && oscarCustomNominees[cat.id]) || [];
+      const combined = [...official, ...custom];
+      for (let idx = 0; idx < combined.length; idx++) {
+        const nom = combined[idx];
+        const nomKey = `${cat.id}:${nom.id || nom.title || idx}`;
+        const matched = visits.find((v) => matchOscarNominee(nom, v));
+        const manual = Boolean(oscarChecklist && oscarChecklist[nomKey]);
+        totalNomineesCount += 1;
+        if (matched || manual) {
+          totalWatchedCount += 1;
+        }
+        if (matched) {
+          totalCinemaCount += 1;
+        }
+      }
+    }
+
+    const totalHomeCount = Math.max(0, totalWatchedCount - totalCinemaCount);
+    const progressPct =
+      totalNomineesCount > 0
+        ? Math.round((totalWatchedCount / totalNomineesCount) * 100)
+        : 0;
 
     return {
       currentEdition,
       categoryMatches,
       allCategories,
       totalCategories: allCategories.length,
+      totalNomineesCount,
+      totalWatchedCount,
+      totalCinemaCount,
+      totalHomeCount,
+      progressPct,
     };
-  }, [visits, watchlist, selectedOscarYear, selectedOscarCategoryFilter]);
+  }, [
+    visits,
+    watchlist,
+    oscarChecklist,
+    oscarCustomNominees,
+    selectedOscarYear,
+    selectedOscarCategoryFilter,
+  ]);
 
   const getCountdownLabel = (releaseDateStr) => {
     if (!releaseDateStr) return 'Sem data';
@@ -808,9 +875,9 @@ export default function DataView({
               type="button"
               className={`lb-tab-btn ${activeTab === 'oscar' ? 'active' : ''}`}
               onClick={() => setActiveTab('oscar')}
-              title="Checklist do Oscar (Melhor Filme)"
+              title="Checklist Oficial do Oscar 2027 (Todas as 24 categorias)"
             >
-              <Trophy size={15} /> Oscar
+              <Trophy size={15} /> Oscar 2027
             </button>
             <button
               type="button"
@@ -1297,10 +1364,11 @@ export default function DataView({
                 <span className="lb-eyebrow">
                   <Trophy size={13} style={{ verticalAlign: 'middle' }} /> TEMPORADA DE PREMIAÇÕES • 99ª EDIÇÃO
                 </span>
-                <h2>Oscar 2027 — Todas as Categorias Oficiais</h2>
+                <h2>Oscar 2027 — Checklist de Todas as 24 Categorias</h2>
                 <p>
-                  Acompanhe a corrida da 99ª edição da Academia. Todas as 24 categorias oficiais
-                  estão catalogadas para você registrar e marcar seus filmes conforme os indicados forem anunciados.
+                  Acompanhe e marque os indicados ao Oscar 2027. Filmes vistos no cinema ganham
+                  a tag automática <strong>🍿 No Cinema</strong> com sua nota e cinema.
+                  Curtas documentais, animações e filmes vistos em streaming podem ser marcados diretamente no checklist!
                 </p>
               </div>
 
@@ -1314,14 +1382,49 @@ export default function DataView({
               </div>
             </div>
 
-            {/* Banner de Status Em Breve */}
+            {/* Painel de Estatísticas e Progresso do Checklist */}
+            <div className="lb-oscar-summary-strip">
+              <div className="lb-oscar-stat-box">
+                <span className="lb-stat-label">Progresso do Checklist</span>
+                <strong className="lb-stat-value">{oscarAnalysis.progressPct}%</strong>
+                <span className="lb-stat-sub">
+                  {oscarAnalysis.totalWatchedCount} de {oscarAnalysis.totalNomineesCount} assistidos
+                </span>
+              </div>
+              <div className="lb-oscar-stat-box highlight-cinema">
+                <span className="lb-stat-label">🍿 No Cinema</span>
+                <strong className="lb-stat-value">{oscarAnalysis.totalCinemaCount}</strong>
+                <span className="lb-stat-sub">Sincronizados das suas idas</span>
+              </div>
+              <div className="lb-oscar-stat-box highlight-home">
+                <span className="lb-stat-label">🏠 Fora do Cinema</span>
+                <strong className="lb-stat-value">{oscarAnalysis.totalHomeCount}</strong>
+                <span className="lb-stat-sub">Marcados no checklist</span>
+              </div>
+              <div className="lb-oscar-stat-box">
+                <span className="lb-stat-label">Categorias</span>
+                <strong className="lb-stat-value">24</strong>
+                <span className="lb-stat-sub">Oficiais da Academia</span>
+              </div>
+            </div>
+
+            {/* Barra de Progresso Visual */}
+            <div className="lb-oscar-progress-bar-wrap">
+              <div
+                className="lb-oscar-progress-bar-fill"
+                style={{ width: `${Math.min(100, oscarAnalysis.progressPct)}%` }}
+              />
+            </div>
+
+            {/* Banner de Explicação da Funcionalidade */}
             <div className="lb-oscar-soon-banner">
               <Sparkles size={18} className="lb-oscar-sparkle-icon" />
               <div>
-                <strong>Aguardando anúncio oficial dos indicados da Academia (Oscar 2027)</strong>
+                <strong>Checklist Híbrido Cinema + Streaming / Curtas:</strong>
                 <span>
-                  As 24 categorias já estão preparadas abaixo. Assim que as listas forem divulgadas pela Academia,
-                  cada filme indicado será automaticamente sincronizado com as suas idas ao cinema!
+                  Nem tudo passa nas salas de cinema comerciais (como curtas documentais e de animação). Marque
+                  o que assistiu em casa clicando na caixinha. Se você registrou a ida no CineLog,
+                  o app reconhece o filme e destaca a tag <strong>🍿 No Cinema</strong> com os dados da sua sessão!
                 </span>
               </div>
             </div>
@@ -1355,6 +1458,15 @@ export default function DataView({
             </div>
           </div>
 
+          {/* Datalist global para sugestões de filmes assistidos no cinema */}
+          <datalist id="oscar-cinema-visits-datalist">
+            {visits.map((v, i) => (
+              <option key={`${v.id || i}-${v.title}`} value={v.title}>
+                {v.title} ({v.cinema_name || 'Cinema'})
+              </option>
+            ))}
+          </datalist>
+
           {/* Grid com todas as 24 categorias oficiais do Oscar 2027 */}
           <div className="lb-oscar-categories-grid">
             {oscarAnalysis.categoryMatches.map((category) => (
@@ -1365,38 +1477,161 @@ export default function DataView({
                     <h4>{category.name}</h4>
                     <span className="lb-oscar-cat-en">{category.nameEn}</span>
                   </div>
-                  <span className="lb-oscar-slots-pill">
-                    {category.slots} {category.slots === 1 ? 'vaga' : 'vagas'}
-                  </span>
+                  <div className="lb-oscar-header-pills">
+                    {category.nomineesWithStatus.length > 0 && (
+                      <span className="lb-oscar-cat-progress-pill">
+                        {category.watchedCount}/{category.nomineesWithStatus.length}
+                      </span>
+                    )}
+                    <span className="lb-oscar-slots-pill">
+                      {category.slots} {category.slots === 1 ? 'vaga' : 'vagas'}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="lb-oscar-category-body">
                   {category.nomineesWithStatus.length === 0 ? (
                     <div className="lb-oscar-nominees-soon">
                       <Clock size={14} />
-                      <span>Indicados em breve</span>
+                      <span>Lista oficial em breve. Adicione títulos ou curtas para acompanhar abaixo:</span>
                     </div>
                   ) : (
-                    category.nomineesWithStatus.map((nominee) => (
-                      <div
-                        key={nominee.title}
-                        className={`lb-oscar-nominee-row ${
-                          nominee.watched ? 'watched' : 'unwatched'
-                        }`}
-                        onClick={() => {
-                          if (nominee.visit) setSelectedVisitDetail(nominee.visit);
-                        }}
+                    <div className="lb-oscar-checklist-list">
+                      {category.nomineesWithStatus.map((nominee) => (
+                        <div
+                          key={nominee.nomineeKey}
+                          className={`lb-oscar-checklist-item ${
+                            nominee.watched ? 'watched' : 'unwatched'
+                          } ${nominee.watchedAtCinema ? 'at-cinema' : ''}`}
+                        >
+                          {/* Checkbox interativo */}
+                          <button
+                            type="button"
+                            className={`lb-oscar-item-checkbox ${
+                              nominee.watched ? 'checked' : ''
+                            } ${nominee.watchedAtCinema ? 'cinema' : ''}`}
+                            onClick={() => {
+                              if (nominee.watchedAtCinema && nominee.visit) {
+                                setSelectedVisitDetail(nominee.visit);
+                              } else if (onToggleOscarChecklistItem) {
+                                onToggleOscarChecklistItem(nominee.nomineeKey);
+                              }
+                            }}
+                            title={
+                              nominee.watchedAtCinema
+                                ? 'Assistido no Cinema! Clique para ver a sessão'
+                                : nominee.watched
+                                ? 'Assistido fora do cinema (clique para desmarcar)'
+                                : 'Clique para marcar como visto'
+                            }
+                          >
+                            {nominee.watched && <Check size={13} strokeWidth={3} />}
+                          </button>
+
+                          {/* Informações do Filme / Indicado */}
+                          <div className="lb-oscar-item-content">
+                            <span className="lb-oscar-item-title">{nominee.title}</span>
+                            {nominee.nomineePerson && (
+                              <span className="lb-oscar-item-sub">{nominee.nomineePerson}</span>
+                            )}
+                          </div>
+
+                          {/* Tags de Status */}
+                          <div className="lb-oscar-item-tags">
+                            {nominee.watchedAtCinema ? (
+                              <button
+                                type="button"
+                                className="lb-oscar-tag cinema"
+                                onClick={() => {
+                                  if (nominee.visit) setSelectedVisitDetail(nominee.visit);
+                                }}
+                                title="Ver detalhes da sessão no cinema"
+                              >
+                                🍿 No Cinema • {nominee.visit?.cinema_name || 'Cinema'}
+                                {nominee.visit?.rating ? ` • ${nominee.visit.rating}★` : ''}
+                              </button>
+                            ) : nominee.watched ? (
+                              <button
+                                type="button"
+                                className="lb-oscar-tag home"
+                                onClick={() =>
+                                  onToggleOscarChecklistItem &&
+                                  onToggleOscarChecklistItem(nominee.nomineeKey)
+                                }
+                                title="Clique para desmarcar"
+                              >
+                                ✓ Visto (Fora do Cinema)
+                              </button>
+                            ) : nominee.inWatchlist ? (
+                              <span className="lb-oscar-tag watchlist">★ Quero Ver</span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="lb-oscar-tag pending"
+                                onClick={() =>
+                                  onToggleOscarChecklistItem &&
+                                  onToggleOscarChecklistItem(nominee.nomineeKey)
+                                }
+                                title="Clique para marcar como visto"
+                              >
+                                Marcar Visto
+                              </button>
+                            )}
+
+                            {/* Botão de remoção se for item adicionado pelo usuário */}
+                            {nominee.isCustom && (
+                              <button
+                                type="button"
+                                className="lb-oscar-item-remove-btn"
+                                onClick={() =>
+                                  onRemoveOscarCustomNominee &&
+                                  onRemoveOscarCustomNominee(category.id, nominee.id)
+                                }
+                                title="Remover da categoria"
+                              >
+                                <X size={12} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Form para adicionar filme, curta ou indicado à categoria */}
+                  {!isReadOnlyVisitor && (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const text = categoryInputText[category.id];
+                        if (text && text.trim() && onAddOscarCustomNominee) {
+                          onAddOscarCustomNominee(category.id, text.trim());
+                          setCategoryInputText((prev) => ({ ...prev, [category.id]: '' }));
+                        }
+                      }}
+                      className="lb-oscar-add-nominee-form"
+                    >
+                      <input
+                        type="text"
+                        list="oscar-cinema-visits-datalist"
+                        placeholder={`+ Adicionar filme ou curta em ${category.name.replace('Melhor ', '')}...`}
+                        value={categoryInputText[category.id] || ''}
+                        onChange={(e) =>
+                          setCategoryInputText((prev) => ({
+                            ...prev,
+                            [category.id]: e.target.value,
+                          }))
+                        }
+                        className="lb-oscar-add-input"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!categoryInputText[category.id]?.trim()}
+                        className="lb-oscar-add-submit-btn"
                       >
-                        <span className="lb-oscar-nominee-title">{nominee.title}</span>
-                        {nominee.watched ? (
-                          <span className="lb-oscar-status-mini watched">✓ Visto</span>
-                        ) : nominee.inWatchlist ? (
-                          <span className="lb-oscar-status-mini watchlist">★ Quero Ver</span>
-                        ) : (
-                          <span className="lb-oscar-status-mini pending">Pendente</span>
-                        )}
-                      </div>
-                    ))
+                        <Plus size={13} /> Adicionar
+                      </button>
+                    </form>
                   )}
                 </div>
               </div>

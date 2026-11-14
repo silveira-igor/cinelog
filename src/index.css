@@ -3608,6 +3608,307 @@ select {
   line-height: 1.4;
 }
 
+/* Painel de Estatísticas e Progresso do Checklist */
+.lb-oscar-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.lb-oscar-stat-box {
+  background: rgba(15, 19, 23, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.7rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lb-oscar-stat-box.highlight-cinema {
+  border-color: rgba(255, 215, 0, 0.45);
+  background: rgba(255, 215, 0, 0.08);
+}
+
+.lb-oscar-stat-box.highlight-cinema .lb-stat-value {
+  color: #ffd700;
+}
+
+.lb-oscar-stat-box.highlight-home {
+  border-color: rgba(0, 224, 84, 0.35);
+  background: rgba(0, 224, 84, 0.06);
+}
+
+.lb-oscar-stat-box.highlight-home .lb-stat-value {
+  color: var(--lb-green);
+}
+
+.lb-stat-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--lb-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.lb-stat-value {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.15;
+}
+
+.lb-stat-sub {
+  font-size: 0.68rem;
+  color: var(--lb-text-secondary);
+}
+
+.lb-oscar-progress-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.lb-oscar-progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffd700, #00e054);
+  transition: width 0.3s ease;
+}
+
+.lb-oscar-header-pills {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.lb-oscar-cat-progress-pill {
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: rgba(0, 224, 84, 0.15);
+  border: 1px solid rgba(0, 224, 84, 0.4);
+  color: var(--lb-green);
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.lb-oscar-checklist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.lb-oscar-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.65rem;
+  background: rgba(20, 24, 28, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.lb-oscar-checklist-item.watched {
+  border-color: rgba(0, 224, 84, 0.3);
+  background: rgba(0, 224, 84, 0.05);
+}
+
+.lb-oscar-checklist-item.at-cinema {
+  border-color: rgba(255, 215, 0, 0.4);
+  background: rgba(255, 215, 0, 0.06);
+}
+
+.lb-oscar-item-checkbox {
+  width: 19px;
+  height: 19px;
+  min-width: 19px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: #fff;
+  padding: 0;
+}
+
+.lb-oscar-item-checkbox:hover {
+  border-color: var(--lb-green);
+}
+
+.lb-oscar-item-checkbox.checked {
+  background: var(--lb-green);
+  border-color: var(--lb-green);
+  color: #14181c;
+}
+
+.lb-oscar-item-checkbox.cinema {
+  background: #ffd700;
+  border-color: #ffd700;
+  color: #14181c;
+}
+
+.lb-oscar-item-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.lb-oscar-item-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lb-oscar-item-sub {
+  font-size: 0.68rem;
+  color: var(--lb-text-muted);
+}
+
+.lb-oscar-item-tags {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.lb-oscar-tag {
+  border: none;
+  outline: none;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 3px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lb-oscar-tag.cinema {
+  background: rgba(255, 215, 0, 0.16);
+  border: 1px solid rgba(255, 215, 0, 0.45);
+  color: #ffd700;
+  transition: background 0.15s ease;
+}
+
+.lb-oscar-tag.cinema:hover {
+  background: rgba(255, 215, 0, 0.28);
+}
+
+.lb-oscar-tag.home {
+  background: rgba(0, 224, 84, 0.16);
+  border: 1px solid rgba(0, 224, 84, 0.35);
+  color: var(--lb-green);
+  cursor: pointer;
+}
+
+.lb-oscar-tag.home:hover {
+  background: rgba(0, 224, 84, 0.28);
+}
+
+.lb-oscar-tag.watchlist {
+  background: rgba(64, 188, 244, 0.15);
+  border: 1px solid rgba(64, 188, 244, 0.35);
+  color: var(--lb-blue);
+  cursor: default;
+}
+
+.lb-oscar-tag.pending {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--lb-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lb-oscar-tag.pending:hover {
+  background: rgba(0, 224, 84, 0.15);
+  color: var(--lb-green);
+  border-color: rgba(0, 224, 84, 0.35);
+}
+
+.lb-oscar-item-remove-btn {
+  background: transparent;
+  border: none;
+  color: var(--lb-text-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s ease;
+}
+
+.lb-oscar-item-remove-btn:hover {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
+}
+
+.lb-oscar-add-nominee-form {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.lb-oscar-add-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(15, 19, 23, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  color: #fff;
+  font-size: 0.72rem;
+  padding: 5px 8px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.lb-oscar-add-input:focus {
+  border-color: #ffd700;
+}
+
+.lb-oscar-add-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid rgba(255, 215, 0, 0.4);
+  color: #ffd700;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.lb-oscar-add-submit-btn:hover:not(:disabled) {
+  background: rgba(255, 215, 0, 0.28);
+}
+
+.lb-oscar-add-submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+  .lb-oscar-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .lb-oscar-group-filters {
   display: flex;
   flex-direction: column;

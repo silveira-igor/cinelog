@@ -383,6 +383,8 @@ function extractProfilesAndMovieRows(allRows) {
         pin: String(meta.pin || '1234'),
         annualGoal: Number(meta.annualGoal || 24),
         watchlist: Array.isArray(meta.watchlist) ? meta.watchlist : [],
+        oscarChecklist: meta.oscarChecklist && typeof meta.oscarChecklist === 'object' ? meta.oscarChecklist : {},
+        oscarCustomNominees: meta.oscarCustomNominees && typeof meta.oscarCustomNominees === 'object' ? meta.oscarCustomNominees : {},
         createdAt: row.created_at,
         rawMeta: meta,
         isPrimary: profilesMap.size === 0,
@@ -555,6 +557,8 @@ export async function fetchCinemaVisits(requestedUsername = '') {
     activeUsername: targetUser,
     annualGoal: activeProfileObj ? activeProfileObj.annualGoal : 24,
     watchlist: activeProfileObj ? activeProfileObj.watchlist : [],
+    oscarChecklist: activeProfileObj ? activeProfileObj.oscarChecklist || {} : {},
+    oscarCustomNominees: activeProfileObj ? activeProfileObj.oscarCustomNominees || {} : {},
     primaryProfileUsername,
     isDemoMode: false,
     cloudActive,
@@ -584,7 +588,10 @@ async function fetchAllProfilesInternal() {
   return extractProfilesAndMovieRows(allRows);
 }
 
-export async function updateProfilePreferences(username, { annualGoal, watchlist }) {
+export async function updateProfilePreferences(
+  username,
+  { annualGoal, watchlist, oscarChecklist, oscarCustomNominees }
+) {
   const cleanUser = normalizeUsername(username);
   if (!cleanUser) return null;
 
@@ -598,6 +605,12 @@ export async function updateProfilePreferences(username, { annualGoal, watchlist
     pin: found.pin,
     annualGoal: annualGoal !== undefined ? Number(annualGoal) : found.annualGoal,
     watchlist: watchlist !== undefined ? watchlist : found.watchlist,
+    oscarChecklist:
+      oscarChecklist !== undefined ? oscarChecklist : found.rawMeta?.oscarChecklist || {},
+    oscarCustomNominees:
+      oscarCustomNominees !== undefined
+        ? oscarCustomNominees
+        : found.rawMeta?.oscarCustomNominees || {},
   };
 
   const newNotes = JSON.stringify(updatedMeta);
