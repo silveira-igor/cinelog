@@ -13,38 +13,56 @@ jobs:
     steps:
       - name: Send keep-alive ping to Supabase REST API
         env:
-          URL_A: ${{ secrets.SUPABASE_URL }}
-          URL_B: ${{ secrets.VITE_SUPABASE_URL }}
-          KEY_A: ${{ secrets.SUPABASE_ANON_KEY }}
-          KEY_B: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          URL_S1: ${{ secrets.SUPABASE_URL }}
+          URL_S2: ${{ secrets.VITE_SUPABASE_URL }}
+          URL_V1: ${{ vars.SUPABASE_URL }}
+          URL_V2: ${{ vars.VITE_SUPABASE_URL }}
+          KEY_S1: ${{ secrets.SUPABASE_ANON_KEY }}
+          KEY_S2: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          KEY_V1: ${{ vars.SUPABASE_ANON_KEY }}
+          KEY_V2: ${{ vars.VITE_SUPABASE_ANON_KEY }}
         run: |
-          SUPABASE_URL="${URL_A:-$URL_B}"
-          SUPABASE_ANON_KEY="${KEY_A:-$KEY_B}"
+          SUPABASE_URL="${URL_S1:-${URL_S2:-${URL_V1:-$URL_V2}}}"
+          SUPABASE_ANON_KEY="${KEY_S1:-${KEY_S2:-${KEY_V1:-$KEY_V2}}}"
+
+          echo "🔍 Verificando credenciais configuradas..."
+          
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "❌ SUPABASE_URL não foi encontrada!"
+            echo "👉 Adicione em: Settings -> Secrets and variables -> Actions -> Secrets (ou Variables)"
+          else
+            echo "✅ SUPABASE_URL encontrada."
+          fi
+
+          if [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "❌ SUPABASE_ANON_KEY não foi encontrada!"
+            echo "👉 Adicione em: Settings -> Secrets and variables -> Actions -> Secrets (ou Variables)"
+          else
+            echo "✅ SUPABASE_ANON_KEY encontrada (${#SUPABASE_ANON_KEY} caracteres)."
+          fi
 
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "❌ ERRO: Segredos do Supabase não encontrados no GitHub!"
             echo ""
-            echo "👉 Para configurar:"
-            echo "1. Acesse o repositório no GitHub."
-            echo "2. Vá em Settings -> Secrets and variables -> Actions."
-            echo "3. Adicione os Repository Secrets:"
-            echo "   - SUPABASE_URL (ou VITE_SUPABASE_URL)"
-            echo "   - SUPABASE_ANON_KEY (ou VITE_SUPABASE_ANON_KEY)"
+            echo "As chaves são obrigatórias para que o GitHub possa pingar o seu Supabase."
             exit 1
           fi
 
           BASE_URL="${SUPABASE_URL%/}"
-          echo "🚀 Enviando ping de atividade para o Supabase..."
+          echo "🚀 Enviando ping de atividade para a API do Supabase..."
 
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
             -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
             "$BASE_URL/rest/v1/cinema_visits?select=id&limit=1")
 
-          echo "📡 Resposta HTTP recebida: $HTTP_CODE"
+          BODY=$(echo "$RESPONSE" | sed -e '$d')
+          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+
+          echo "📡 Código HTTP recebido: $HTTP_CODE"
+          echo "📄 Resposta do servidor: $BODY"
 
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "✅ Sucesso! O banco de dados do Supabase registrou movimentação e continuará ativo."
+            echo "🎉 Sucesso! O banco de dados do Supabase registrou movimentação e continuará ativo."
           else
             echo "❌ Falha ao comunicar com o Supabase. Código retornado: $HTTP_CODE"
             exit 1
