@@ -1,0 +1,50 @@
+name: Keep Supabase Active
+
+on:
+  schedule:
+    # Roda a cada 3 dias às 12:00 UTC (9:00 BRT)
+    - cron: '0 12 */3 * *'
+  workflow_dispatch: # Permite disparar manualmente pelo botão "Run workflow" no GitHub
+
+jobs:
+  ping-supabase:
+    name: Ping Supabase Database
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send keep-alive ping to Supabase REST API
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL || secrets.VITE_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "❌ ERRO: Segredos do Supabase não encontrados!"
+            echo ""
+            echo "👉 Para configurar:"
+            echo "1. Acesse o seu repositório no GitHub."
+            echo "2. Vá em 'Settings' -> 'Secrets and variables' -> 'Actions'."
+            echo "3. Adicione os seguintes Repository Secrets:"
+            echo "   - SUPABASE_URL (ou VITE_SUPABASE_URL): sua URL (ex: https://xyzcompany.supabase.co)"
+            echo "   - SUPABASE_ANON_KEY (ou VITE_SUPABASE_ANON_KEY): sua chave anon pública"
+            exit 1
+          fi
+
+          # Normaliza a URL removendo barras no final
+          BASE_URL="${SUPABASE_URL%/}"
+
+          echo "🚀 Enviando ping de atividade para o Supabase..."
+          
+          # Faz uma consulta leve na API REST do Supabase (lendo 1 ID)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            "$BASE_URL/rest/v1/cinema_visits?select=id&limit=1")
+
+          echo "📡 Resposta HTTP recebida: $HTTP_CODE"
+
+          # Códigos 200 (OK), 206 (Partial), ou 204 (No Content) indicam sucesso
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Sucesso! O banco de dados do Supabase registrou movimentação e continuará ativo."
+          else
+            echo "❌ Falha ao comunicar com o Supabase. Código retornado: $HTTP_CODE"
+            exit 1
+          fi
