@@ -2,9 +2,9 @@ name: Keep Supabase Active
 
 on:
   schedule:
-    # Roda a cada 3 dias às 12:00 UTC (9:00 BRT)
-    - cron: '0 12 */3 * *'
-  workflow_dispatch: # Permite disparar manualmente pelo botão "Run workflow" no GitHub
+    # Executa toda segunda e quinta-feira às 12:00 UTC (09:00 Horário de Brasília)
+    - cron: '0 12 * * 1,4'
+  workflow_dispatch:
 
 jobs:
   ping-supabase:
@@ -26,19 +26,16 @@ jobs:
             echo ""
             echo "👉 Para configurar:"
             echo "1. Acesse o repositório no GitHub."
-            echo "2. Vá em 'Settings' -> 'Secrets and variables' -> 'Actions'."
-            echo "3. Adicione os seguintes Repository Secrets:"
+            echo "2. Vá em Settings -> Secrets and variables -> Actions."
+            echo "3. Adicione os Repository Secrets:"
             echo "   - SUPABASE_URL (ou VITE_SUPABASE_URL)"
             echo "   - SUPABASE_ANON_KEY (ou VITE_SUPABASE_ANON_KEY)"
             exit 1
           fi
 
-          # Normaliza a URL removendo barras no final
           BASE_URL="${SUPABASE_URL%/}"
-
           echo "🚀 Enviando ping de atividade para o Supabase..."
-          
-          # Faz uma consulta leve na API REST do Supabase (lendo 1 registro)
+
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "apikey: $SUPABASE_ANON_KEY" \
             -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
@@ -46,7 +43,6 @@ jobs:
 
           echo "📡 Resposta HTTP recebida: $HTTP_CODE"
 
-          # Códigos HTTP 200 a 299 indicam sucesso
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "✅ Sucesso! O banco de dados do Supabase registrou movimentação e continuará ativo."
           else
