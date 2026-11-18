@@ -25,11 +25,8 @@ jobs:
           RAW_URL="${URL_S1:-${URL_S2:-${URL_V1:-$URL_V2}}}"
           RAW_KEY="${KEY_S1:-${KEY_S2:-${KEY_V1:-$KEY_V2}}}"
 
-          echo "## 📊 Relatório do Ping no Supabase" >> $GITHUB_STEP_SUMMARY
-
           if [ -z "$RAW_URL" ] || [ -z "$RAW_KEY" ]; then
-            echo "❌ **Erro:** Secrets não configurados no GitHub." >> $GITHUB_STEP_SUMMARY
-            echo "Adicione \`SUPABASE_URL\` e \`SUPABASE_ANON_KEY\` em *Settings -> Secrets and variables -> Actions*." >> $GITHUB_STEP_SUMMARY
+            echo "::error title=Credenciais Ausentes::Secrets SUPABASE_URL ou SUPABASE_ANON_KEY não foram encontrados nos Secrets do GitHub."
             exit 1
           fi
 
@@ -37,7 +34,7 @@ jobs:
           CLEAN_URL=$(echo "$RAW_URL" | tr -d '"' | tr -d "'" | sed -e 's/[[:space:]]//g' -e 's:/*$::')
           CLEAN_KEY=$(echo "$RAW_KEY" | tr -d '"' | tr -d "'" | tr -d '\r' | tr -d '\n' | sed -e 's/[[:space:]]//g')
 
-          # Se o link for do dashboard, ajusta para api
+          # Se o link for do dashboard, ajusta para a URL de API
           if [[ "$CLEAN_URL" =~ dashboard/project/([a-zA-Z0-9_-]+) ]]; then
             PROJECT_ID="${BASH_REMATCH[1]}"
             CLEAN_URL="https://${PROJECT_ID}.supabase.co"
@@ -47,14 +44,9 @@ jobs:
             CLEAN_URL="https://${CLEAN_URL}"
           fi
 
-          MASKED_KEY="${CLEAN_KEY:0:8}...${CLEAN_KEY: -5}"
+          echo "Alvo: $CLEAN_URL"
 
-          echo "| Parâmetro | Valor |" >> $GITHUB_STEP_SUMMARY
-          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
-          echo "| **URL de Destino** | \`$CLEAN_URL\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Chave Anon** | \`$MASKED_KEY\` |" >> $GITHUB_STEP_SUMMARY
-
-          # Executa requisição
+          # 1. Consulta cinema_visits
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
             -H "apikey: $CLEAN_KEY" \
             -H "Authorization: Bearer $CLEAN_KEY" \
@@ -63,16 +55,12 @@ jobs:
           BODY=$(echo "$RESPONSE" | sed -e '$d')
           HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
 
-          echo "| **Status HTTP (cinema_visits)** | \`$HTTP_CODE\` |" >> $GITHUB_STEP_SUMMARY
-
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "✅ **Sucesso! O Supabase respondeu com código $HTTP_CODE e registrou movimentação.**" >> $GITHUB_STEP_SUMMARY
-            echo "Seu banco de dados continuará ativo e não entrará em pausa." >> $GITHUB_STEP_SUMMARY
+            echo "✅ Sucesso! Tabela cinema_visits consultada com código $HTTP_CODE."
             exit 0
           fi
 
-          # Se a tabela falhou, tenta a raiz da API
+          # 2. Consulta raiz da API
           ROOT_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
             -H "apikey: $CLEAN_KEY" \
             -H "Authorization: Bearer $CLEAN_KEY" \
@@ -81,27 +69,14 @@ jobs:
           ROOT_BODY=$(echo "$ROOT_RESPONSE" | sed -e '$d')
           ROOT_CODE=$(echo "$ROOT_RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
 
-          echo "| **Status HTTP (raiz da API)** | \`$ROOT_CODE\` |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
           if [ "$ROOT_CODE" -ge 200 ] && [ "$ROOT_CODE" -lt 300 ]; then
-            echo "✅ **Sucesso! A raiz da API Supabase respondeu com código $ROOT_CODE.**" >> $GITHUB_STEP_SUMMARY
-            echo "Tráfego de atividade computado com sucesso pelo Supabase." >> $GITHUB_STEP_SUMMARY
+            echo "✅ Sucesso! Raiz da API Supabase consultada com código $ROOT_CODE."
             exit 0
           fi
 
-          echo "### ⚠️ Diagnóstico da Falha" >> $GITHUB_STEP_SUMMARY
+          # Se ambas falharam, emite erro visível nas anotações do GitHub
+          CLEAN_BODY=$(echo "$BODY" | tr '\n' ' ' | head -c 200)
+          CLEAN_ROOT=$(echo "$ROOT_BODY" | tr '\n' ' ' | head -c 200)
 
-          if [ "$HTTP_CODE" -eq 503 ] || [ "$ROOT_CODE" -eq 503 ]; then
-            echo "🚨 **O seu projeto já foi colocado em modo 'Pausado' pelo Supabase!**" >> $GITHUB_STEP_SUMMARY
-            echo "Quando o banco já pausou, ele não responde requisições de API." >> $GITHUB_STEP_SUMMARY
-            echo "👉 **Como resolver:** Acesse [supabase.com/dashboard](https://supabase.com/dashboard), entre no seu projeto e clique no botão verde/azul **'Restore project' / 'Unpause'**. Depois de 1 minuto, quando ele religar, o keep-alive funcionará e nunca mais deixará ele pausar!" >> $GITHUB_STEP_SUMMARY
-          elif [ "$HTTP_CODE" -eq 401 ] || [ "$ROOT_CODE" -eq 401 ] || [ "$HTTP_CODE" -eq 403 ] || [ "$ROOT_CODE" -eq 403 ]; then
-            echo "🔑 **Chave Anon ou URL inválida ($HTTP_CODE)**" >> $GITHUB_STEP_SUMMARY
-            echo "Confira no Supabase em *Settings -> API* se a chave \`anon public\` e a \`Project URL\` foram copiadas por completo para os Secrets." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "Código retornado: \`$HTTP_CODE\`." >> $GITHUB_STEP_SUMMARY
-            echo "Resposta recebida: \`$BODY\`" >> $GITHUB_STEP_SUMMARY
-          fi
-
+          echo "::error title=Diagnostico Supabase::Status tabela: $HTTP_CODE ($CLEAN_BODY) | Status raiz: $ROOT_CODE ($CLEAN_ROOT) | URL: $CLEAN_URL"
           exit 1
