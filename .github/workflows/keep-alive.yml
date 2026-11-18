@@ -30,16 +30,20 @@ jobs:
             exit 1
           fi
 
-          # Limpeza de URL e chave
-          CLEAN_URL=$(echo "$RAW_URL" | tr -d '"' | tr -d "'" | sed -e 's/[[:space:]]//g' -e 's:/*$::')
+          # Limpeza de espaços e aspas
+          CLEAN_URL=$(echo "$RAW_URL" | tr -d '"' | tr -d "'" | sed -e 's/[[:space:]]//g')
           CLEAN_KEY=$(echo "$RAW_KEY" | tr -d '"' | tr -d "'" | tr -d '\r' | tr -d '\n' | sed -e 's/[[:space:]]//g')
 
-          # Se o link for do dashboard, ajusta para a URL de API
+          # Se o link for do dashboard do Supabase, extrai o ID do projeto
           if [[ "$CLEAN_URL" =~ dashboard/project/([a-zA-Z0-9_-]+) ]]; then
             PROJECT_ID="${BASH_REMATCH[1]}"
             CLEAN_URL="https://${PROJECT_ID}.supabase.co"
           fi
 
+          # Remove sufixo /rest/v1 ou barras extras no final (caso tenha sido colado junto)
+          CLEAN_URL=$(echo "$CLEAN_URL" | sed -E 's:/rest/v1/?$::' | sed -E 's:/+$::')
+
+          # Garante que tenha protocolo https://
           if [[ ! "$CLEAN_URL" =~ ^https?:// ]]; then
             CLEAN_URL="https://${CLEAN_URL}"
           fi
@@ -74,7 +78,6 @@ jobs:
             exit 0
           fi
 
-          # Se ambas falharam, emite erro visível nas anotações do GitHub
           CLEAN_BODY=$(echo "$BODY" | tr '\n' ' ' | head -c 200)
           CLEAN_ROOT=$(echo "$ROOT_BODY" | tr '\n' ' ' | head -c 200)
 
