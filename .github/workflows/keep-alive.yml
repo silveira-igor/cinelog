@@ -22,48 +22,69 @@ jobs:
           KEY_V1: ${{ vars.SUPABASE_ANON_KEY }}
           KEY_V2: ${{ vars.VITE_SUPABASE_ANON_KEY }}
         run: |
-          SUPABASE_URL="${URL_S1:-${URL_S2:-${URL_V1:-$URL_V2}}}"
-          SUPABASE_ANON_KEY="${KEY_S1:-${KEY_S2:-${KEY_V1:-$KEY_V2}}}"
+          RAW_URL="${URL_S1:-${URL_S2:-${URL_V1:-$URL_V2}}}"
+          RAW_KEY="${KEY_S1:-${KEY_S2:-${KEY_V1:-$KEY_V2}}}"
 
-          echo "🔍 Verificando credenciais configuradas..."
-          
-          if [ -z "$SUPABASE_URL" ]; then
-            echo "❌ SUPABASE_URL não foi encontrada!"
-            echo "👉 Adicione em: Settings -> Secrets and variables -> Actions -> Secrets (ou Variables)"
-          else
-            echo "✅ SUPABASE_URL encontrada."
-          fi
+          echo "🔍 Verificando credenciais configuradas nos Secrets..."
 
-          if [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "❌ SUPABASE_ANON_KEY não foi encontrada!"
-            echo "👉 Adicione em: Settings -> Secrets and variables -> Actions -> Secrets (ou Variables)"
-          else
-            echo "✅ SUPABASE_ANON_KEY encontrada (${#SUPABASE_ANON_KEY} caracteres)."
-          fi
-
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo ""
-            echo "As chaves são obrigatórias para que o GitHub possa pingar o seu Supabase."
+          if [ -z "$RAW_URL" ] || [ -z "$RAW_KEY" ]; then
+            echo "❌ ERRO: Secrets do Supabase não encontrados!"
             exit 1
           fi
 
-          BASE_URL="${SUPABASE_URL%/}"
-          echo "🚀 Enviando ping de atividade para a API do Supabase..."
+          # Limpeza e sanitização da URL e da chave (remove espaços e aspas acidentais)
+          CLEAN_URL=$(echo "$RAW_URL" | tr -d '"' | tr -d "'" | sed -e 's/[[:space:]]//g' -e 's:/*$::')
+          CLEAN_KEY=$(echo "$RAW_KEY" | tr -d '"' | tr -d "'" | tr -d '\r' | tr -d '\n' | sed -e 's/[[:space:]]//g')
 
+          # Se o usuário copiou o link da barra de endereço do painel (supabase.com/dashboard/project/xyz)
+          if [[ "$CLEAN_URL" =~ dashboard/project/([a-zA-Z0-9_-]+) ]]; then
+            PROJECT_ID="${BASH_REMATCH[1]}"
+            CLEAN_URL="https://${PROJECT_ID}.supabase.co"
+            echo "ℹ️ URL corrigida automaticamente do painel para: $CLEAN_URL"
+          fi
+
+          # Garante que tenha protocolo https://
+          if [[ ! "$CLEAN_URL" =~ ^https?:// ]]; then
+            CLEAN_URL="https://${CLEAN_URL}"
+          fi
+
+          echo "🎯 Endpoint de destino: $CLEAN_URL"
+          echo "🚀 Enviando ping de atividade para o Supabase..."
+
+          # Tentativa 1: Consulta na tabela cinema_visits
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
-            "$BASE_URL/rest/v1/cinema_visits?select=id&limit=1")
+            -H "apikey: $CLEAN_KEY" \
+            -H "Authorization: Bearer $CLEAN_KEY" \
+            "$CLEAN_URL/rest/v1/cinema_visits?select=id&limit=1")
 
           BODY=$(echo "$RESPONSE" | sed -e '$d')
           HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
 
-          echo "📡 Código HTTP recebido: $HTTP_CODE"
-          echo "📄 Resposta do servidor: $BODY"
+          echo "📡 Resposta recebida da tabela: Código HTTP $HTTP_CODE"
 
+          # Se a tabela retornar 2xx, sucesso imediato
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            echo "🎉 Sucesso! O banco de dados do Supabase registrou movimentação e continuará ativo."
-          else
-            echo "❌ Falha ao comunicar com o Supabase. Código retornado: $HTTP_CODE"
-            exit 1
+            echo "🎉 Sucesso absoluto! A tabela cinema_visits foi consultada com êxito."
+            echo "O Supabase registrou movimentação ativa e seu banco continuará funcionando."
+            exit 0
           fi
+
+          echo "ℹ️ Tentando ping direto no endpoint raiz da API PostgREST..."
+          # Tentativa 2: Consulta na raiz da API REST (OpenAPI Spec do Supabase)
+          ROOT_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -H "apikey: $CLEAN_KEY" \
+            -H "Authorization: Bearer $CLEAN_KEY" \
+            "$CLEAN_URL/rest/v1/")
+
+          ROOT_CODE=$(echo "$ROOT_RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          echo "📡 Resposta recebida da raiz da API: Código HTTP $ROOT_CODE"
+
+          if [ "$ROOT_CODE" -ge 200 ] && [ "$ROOT_CODE" -lt 300 ]; then
+            echo "🎉 Sucesso! A API do Supabase respondeu com código $ROOT_CODE e registrou tráfego."
+            exit 0
+          fi
+
+          echo "❌ Falha ao comunicar com o Supabase."
+          echo "Código da tabela: $HTTP_CODE | Resposta: $BODY"
+          echo "Código da raiz da API: $ROOT_CODE"
+          exit 1
