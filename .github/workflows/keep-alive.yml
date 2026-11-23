@@ -2,8 +2,8 @@ name: Keep Supabase Active
 
 on:
   schedule:
-    # Executa toda segunda e quinta-feira às 12:00 UTC (09:00 Horário de Brasília)
-    - cron: '0 12 * * 1,4'
+    # Executa DIARIAMENTE às 12:00 UTC (09:00 Horário de Brasília) para manter a base sempre ativa
+    - cron: '0 12 * * *'
   workflow_dispatch:
 
 jobs:
@@ -51,31 +51,39 @@ jobs:
           echo "Alvo: $CLEAN_URL"
 
           # 1. Consulta cinema_visits
-          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+          CURL_OUT=$(curl -s -w "\nHTTP_STATUS:%{http_code}\nCURL_EXIT:%{exitcode}" \
             -H "apikey: $CLEAN_KEY" \
             -H "Authorization: Bearer $CLEAN_KEY" \
-            "$CLEAN_URL/rest/v1/cinema_visits?select=id&limit=1")
+            "$CLEAN_URL/rest/v1/cinema_visits?select=id&limit=1" || true)
 
-          BODY=$(echo "$RESPONSE" | sed -e '$d')
-          HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          BODY=$(echo "$CURL_OUT" | sed -e '/^HTTP_STATUS:/d' -e '/^CURL_EXIT:/d')
+          HTTP_CODE=$(echo "$CURL_OUT" | grep "^HTTP_STATUS:" | cut -d':' -f2)
+          CURL_EXIT=$(echo "$CURL_OUT" | grep "^CURL_EXIT:" | cut -d':' -f2)
 
           if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
             echo "✅ Sucesso! Tabela cinema_visits consultada com código $HTTP_CODE."
             exit 0
           fi
 
-          # 2. Consulta raiz da API
-          ROOT_RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+          # 2. Consulta raiz da API se a tabela falhou
+          ROOT_OUT=$(curl -s -w "\nHTTP_STATUS:%{http_code}\nCURL_EXIT:%{exitcode}" \
             -H "apikey: $CLEAN_KEY" \
             -H "Authorization: Bearer $CLEAN_KEY" \
-            "$CLEAN_URL/rest/v1/")
+            "$CLEAN_URL/rest/v1/" || true)
 
-          ROOT_BODY=$(echo "$ROOT_RESPONSE" | sed -e '$d')
-          ROOT_CODE=$(echo "$ROOT_RESPONSE" | grep "HTTP_STATUS:" | cut -d':' -f2)
+          ROOT_BODY=$(echo "$ROOT_OUT" | sed -e '/^HTTP_STATUS:/d' -e '/^CURL_EXIT:/d')
+          ROOT_CODE=$(echo "$ROOT_OUT" | grep "^HTTP_STATUS:" | cut -d':' -f2)
+          ROOT_EXIT=$(echo "$ROOT_OUT" | grep "^CURL_EXIT:" | cut -d':' -f2)
 
           if [ "$ROOT_CODE" -ge 200 ] && [ "$ROOT_CODE" -lt 300 ]; then
             echo "✅ Sucesso! Raiz da API Supabase consultada com código $ROOT_CODE."
             exit 0
+          fi
+
+          # Se falhou por DNS / host não encontrado (código 6 do curl)
+          if [ "$CURL_EXIT" = "6" ] || [ "$ROOT_EXIT" = "6" ]; then
+            echo "::error title=Projeto Pausado no Supabase::O domínio não pôde ser resolvido (curl 6). Isso acontece quando o projeto foi PAUSADO pelo Supabase. Acesse o painel do Supabase e clique em 'Restore project' para reativá-lo!"
+            exit 1
           fi
 
           CLEAN_BODY=$(echo "$BODY" | tr '\n' ' ' | head -c 200)
