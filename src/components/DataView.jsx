@@ -19,8 +19,6 @@ import {
   History,
   Clock,
   Clapperboard,
-  Armchair,
-  MessageSquare,
   Bookmark,
   BookmarkCheck,
   Target,
@@ -380,13 +378,11 @@ export default function DataView({
         const matchCinema = String(v.cinema_location || '').toLowerCase().includes(q);
         const matchComp = String(v.company || '').toLowerCase().includes(q);
         const matchDir = String(v.director || '').toLowerCase().includes(q);
-        const matchNotes = String(v.notes || '').toLowerCase().includes(q);
         if (
           !matchTitle &&
           !matchCinema &&
           !matchComp &&
-          !matchDir &&
-          !matchNotes
+          !matchDir
         ) {
           return false;
         }
@@ -913,7 +909,7 @@ export default function DataView({
               <Search size={15} />
               <input
                 type="text"
-                placeholder="Buscar filme, diretor, cinema, companhia ou comentário..."
+                placeholder="Buscar filme, diretor, cinema ou companhia..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -1132,11 +1128,6 @@ export default function DataView({
                                 <MapPin size={12} /> {visit.cinema_location}
                               </span>
                             )}
-                            {visit.seat && (
-                              <span>
-                                <Armchair size={12} /> {visit.seat}
-                              </span>
-                            )}
                             <span className="lb-diary-companions-inline">
                               <Users size={12} />
                               {people.length === 0 ? (
@@ -1155,12 +1146,6 @@ export default function DataView({
                               </span>
                             )}
                           </div>
-
-                          {visit.notes && (
-                            <p className="lb-diary-comment-preview">
-                              <MessageSquare size={11} /> "{visit.notes}"
-                            </p>
-                          )}
                         </div>
 
                         <div className="lb-diary-rating-col">
@@ -2697,12 +2682,6 @@ export default function DataView({
                     <span>Cinema / Local</span>
                     <strong>{selectedVisitDetail.cinema_location || '—'}</strong>
                   </div>
-                  {selectedVisitDetail.seat && (
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <span>Sala / Assento</span>
-                      <strong>{selectedVisitDetail.seat}</strong>
-                    </div>
-                  )}
                   <div style={{ gridColumn: '1 / -1' }}>
                     <span>Companhia(s)</span>
                     <div className="lb-detail-companions-list">
@@ -2721,14 +2700,6 @@ export default function DataView({
                       )}
                     </div>
                   </div>
-                  {selectedVisitDetail.notes && (
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <span>Comentário da Sessão</span>
-                      <p className="lb-detail-comment-box">
-                        "{selectedVisitDetail.notes}"
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 <div className="lb-detail-actions">

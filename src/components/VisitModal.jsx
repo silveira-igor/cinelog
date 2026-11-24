@@ -19,8 +19,6 @@ import {
   History,
   Clock,
   Clapperboard,
-  Armchair,
-  MessageSquare,
 } from 'lucide-react';
 import {
   searchMovies,
@@ -71,10 +69,6 @@ export default function VisitModal({
   const [cast, setCast] = useState([]);
   const [studio, setStudio] = useState('');
 
-  // Campos opcionais de Sala/Assento e Comentário Rápido
-  const [seat, setSeat] = useState('');
-  const [notes, setNotes] = useState('');
-
   // Opção manual: já assistiu a este filme antes na vida
   const [isManualRewatch, setIsManualRewatch] = useState(false);
 
@@ -123,8 +117,6 @@ export default function VisitModal({
       setCompanions(parseCompanions(initialData.companionsList || initialData.company));
       setIsManualRewatch(Boolean(initialData.isManualRewatch || initialData.isRewatch));
       setRating(Number(initialData.rating || 0));
-      setSeat(initialData.seat || '');
-      setNotes(initialData.notes || '');
       setRuntime(Number(initialData.runtime || 0));
       setGenres(Array.isArray(initialData.genres) ? initialData.genres : []);
       setDirector(initialData.director || '');
@@ -161,8 +153,6 @@ export default function VisitModal({
       setCompanions([]);
       setIsManualRewatch(false);
       setRating(0);
-      setSeat('');
-      setNotes('');
       setRuntime(prefillMovie.runtime || 0);
       setGenres(Array.isArray(prefillMovie.genres) ? prefillMovie.genres : []);
       setDirector(prefillMovie.director || '');
@@ -196,8 +186,6 @@ export default function VisitModal({
       setCompanions([]);
       setIsManualRewatch(false);
       setRating(0);
-      setSeat('');
-      setNotes('');
       setRuntime(0);
       setGenres([]);
       setDirector('');
@@ -435,9 +423,9 @@ export default function VisitModal({
         director: finalDirector,
         cast: finalCast,
         studio: finalStudio,
-        seat: seat.trim(),
+        seat: '',
         rating: Number(rating || 0),
-        notes: notes.trim(),
+        notes: '',
       });
       onClose();
     } catch (err) {
@@ -889,35 +877,6 @@ export default function VisitModal({
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* Sala / Assento + Comentário Rápido (Opcional) */}
-          <div className="lb-two-cols">
-            <div className="lb-field-group">
-              <label className="lb-label">
-                <Armchair size={14} /> Sala / Assento (Opcional)
-              </label>
-              <input
-                type="text"
-                className="lb-input"
-                placeholder="Ex: Sala 4 - Poltrona G12"
-                value={seat}
-                onChange={(e) => setSeat(e.target.value)}
-              />
-            </div>
-
-            <div className="lb-field-group">
-              <label className="lb-label">
-                <MessageSquare size={14} /> Comentário Rápido da Sessão (Opcional)
-              </label>
-              <input
-                type="text"
-                className="lb-input"
-                placeholder="Ex: Som absurdo no IMAX, sala lotada!"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
             </div>
           </div>
 
